@@ -1,43 +1,61 @@
-window.openMobileSheet = () => {
+<script lang="ts">
+const Q_PANE_LEFT = document.querySelector(".pane-left");
+const I_SHEET_BACKDROP = document.getElementById("sheet-backdrop")
+const I_SCRATCHPAD_PANEL=document.getElementById("scratchpad-panel")
+const I_SP_VISUAL_VIEW = document.getElementById("sp-visual-view")
+const I_NEWS_PAGE_LATEST=document.getElementById("news-page-latest")
+const I_NEWS_PAGE_ARCHIVE_LIST=document.getElementById("news-page-archive-list")
+const I_NEWS_TITLE=document.getElementById("news-title")
+const I_NEWS_BACK_BTN = document.getElementById("news-back-btn")
+const I_VERSION_DROPDOWN = document.getElementById("version-dropdown")
+const I_NEWS_PAGE_ARCHIVE_ENTRY = document.getElementById("news-page-archive-entry")
+
+if (!Q_PANE_LEFT||!I_VERSION_DROPDOWN||!I_NEWS_TITLE||!I_NEWS_PAGE_ARCHIVE_LIST||!I_NEWS_PAGE_LATEST||!I_SP_VISUAL_VIEW || !I_SHEET_BACKDROP || !I_SCRATCHPAD_PANEL) {
+  const msg = "Error: Some elements are missing, this is the developer's fault. Please report this issue."
+  alert(msg);
+  throw msg;
+}
+
+export let openMobileSheet = () => {
   if (window.innerWidth <= 768) {
     // This adds the class that triggers the CSS transition
-    document.querySelector(".pane-left").classList.add("visible");
-    document.getElementById("sheet-backdrop").classList.add("visible");
+    Q_PANE_LEFT.classList.add("visible");
+    I_SHEET_BACKDROP.classList.add("visible");
   }
 };
 
 // --- NEW SHEET MANAGEMENT LOGIC ---
 
-window.closeAllSheets = () => {
+export const closeAllSheets = () => {
   // 1. Close Navigation Sheet
-  document.querySelector(".pane-left").classList.remove("visible");
+  Q_PANE_LEFT.classList.remove("visible");
   // 2. Close Scratchpad
-  document.getElementById("scratchpad-panel").classList.remove("visible");
+  I_SCRATCHPAD_PANEL.classList.remove("visible");
   // 3. Hide Backdrop
-  document.getElementById("sheet-backdrop").classList.remove("visible");
+  I_SHEET_BACKDROP.classList.remove("visible");
 };
 
-window.toggleScratchpad = () => {
-  const el = document.getElementById("scratchpad-panel");
+export const toggleScratchpad = () => {
+  const el = I_SCRATCHPAD_PANEL;
   const isVisible = el.classList.toggle("visible");
 
   // Initialize editor if empty
-  if (isVisible && !document.getElementById("sp-visual-view").innerText) {
+  if (isVisible && !I_SP_VISUAL_VIEW.innerText) {
     renderScratchpad();
   }
 
   // --- Mobile Backdrop Logic ---
   if (window.innerWidth <= 768) {
-    const backdrop = document.getElementById("sheet-backdrop");
+    const backdrop = I_SHEET_BACKDROP;
 
     if (isVisible) {
       // If opening Scratchpad, ensure Nav Sheet is closed
-      document.querySelector(".pane-left").classList.remove("visible");
+      Q_PANE_LEFT.classList.remove("visible");
       // Show Backdrop
       backdrop.classList.add("visible");
     } else {
       // If closing Scratchpad, hide backdrop (unless Nav is somehow open)
-      if (!document.querySelector(".pane-left").classList.contains("visible")) {
+      if (!Q_PANE_LEFT.classList.contains("visible")) {
         backdrop.classList.remove("visible");
       }
     }
@@ -45,15 +63,15 @@ window.toggleScratchpad = () => {
 };
 
 // Update existing openMobileSheet to ensure Scratchpad closes when Nav opens
-const originalOpenMobileSheet = window.openMobileSheet;
-window.openMobileSheet = () => {
+const originalOpenMobileSheet = openMobileSheet;
+openMobileSheet = () => {
   // Close scratchpad before opening nav
-  document.getElementById("scratchpad-panel").classList.remove("visible");
+  I_SCRATCHPAD_PANEL.classList.remove("visible");
   if (originalOpenMobileSheet) originalOpenMobileSheet();
 };
 // Wrap existing openInspector to trigger sheet on mobile
-const originalOpenInspector = window.openInspector;
-window.openInspector = (path, meta, type) => {
+const originalOpenInspector = openInspector;
+openInspector = (path, meta, type) => {
   originalOpenInspector(path, meta, type);
   // openMobileSheet();
 };
@@ -97,7 +115,7 @@ function renderDashboardWidgets(root) {
 
   // TRIGGER FETCH: Populate the news widget we just created
   setTimeout(() => {
-    if (window.fetchNews) window.fetchNews(true);
+    fetchNews(true);
   }, 10);
 }
 function getNewsCardHTML(news) {
@@ -247,7 +265,7 @@ class VirtualScroller {
   }
 }
 
-window.toggleDiffSelectionMode = () => {
+export const toggleDiffSelectionMode = () => {
   const btn = document.getElementById("btn-diff-toggle");
 
   // 1. If Diff Mode is ALREADY active, turn it OFF.
@@ -275,10 +293,10 @@ window.toggleDiffSelectionMode = () => {
   if (btn) btn.classList.add("active");
   showToast("Select a version (or upload) to compare against");
 };
-window.handleVersionClick = async (version) => {
+const handleVersionClick = async (version) => {
   if (state.diffSelecting) {
     // DIFF MODE: Compare Current vs Selected
-    window.setLoading(true);
+    setLoading(true);
     try {
       let baseData = await dataStore.getItem(`version_${version}`);
       if (!baseData) {
@@ -292,18 +310,18 @@ window.handleVersionClick = async (version) => {
     } catch (e) {
       showToast("Failed to load comparison data", true);
     }
-    window.setLoading(false);
+    setLoading(false);
   } else {
     // NORMAL MODE: Load the version
     loadVersion(version);
   }
 };
 
-window.handleUniversalUpload = (input) => {
+export const handleUniversalUpload = (input) => {
   const file = input.files[0];
   if (!file) return;
 
-  window.setLoading(true);
+  setLoading(true);
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -326,13 +344,13 @@ window.handleUniversalUpload = (input) => {
             `<span>${state.selectedVersion}</span>` +
             `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`;
         }
-        document.getElementById("version-dropdown").classList.remove("visible");
+        I_VERSION_DROPDOWN.classList.remove("visible");
       }
     } catch (err) {
       showToast("Error: Invalid JSON", true);
       console.error(err);
     } finally {
-      window.setLoading(false);
+      setLoading(false);
     }
   };
   reader.readAsText(file);
@@ -350,7 +368,7 @@ function activateDiff(baseData, label) {
   if (btn) btn.classList.add("active");
 
   renderRegistry(state.data);
-  document.getElementById("version-dropdown").classList.remove("visible");
+ I_VERSION_DROPDOWN.classList.remove("visible");
   showToast(`Comparing against ${label}`);
 }
 
@@ -378,13 +396,12 @@ async function toggleDiffMode() {
   const confirm = window.confirm(`Compare current view against ${targetVer}?`);
   if (!confirm) return;
 
-  window.setLoading(true);
+  setLoading(true);
   try {
     // Fetch Base Data
     let baseData = await dataStore.getItem(`version_${targetVer}`);
     if (!baseData) {
       // Try fetch
-      const branch = targetVer === "latestCommit" ? CONFIG.BRANCH : CONFIG.BRANCH; // usually separate tag
       const url =
         targetVer === "latestCommit"
           ? `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/latestCommit.json`
@@ -405,7 +422,7 @@ async function toggleDiffMode() {
     showToast("Failed to load comparison data", true);
     console.error(e);
   }
-  window.setLoading(false);
+  setLoading(false);
 }
 
 // Helper to look up a path in a dataset
@@ -431,8 +448,8 @@ function resolveNode(root, type, path) {
 }
 
 // 1. CORS FIX: Use GitHub API instead of Atom feed
-async function fetchReleases() {
-  window.setLoading(true);
+export async function fetchReleases() {
+  setLoading(true);
   try {
     // Use GitHub API (JSON) - Fixes "Cross-Origin Request Blocked"
     const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/releases`;
@@ -448,11 +465,11 @@ async function fetchReleases() {
     const versions = releases.map((r) => r.tag_name);
 
     await dataStore.setItem("releases_list", versions);
-    window.setLoading(false);
+    setLoading(false);
     return versions;
   } catch (e) {
     console.warn("Releases fetch error (using cache):", e);
-    window.setLoading(false);
+    setLoading(false);
     return state.versions;
   }
 }
@@ -506,36 +523,35 @@ const newsNav = {
 
   // LEVEL 0: Show Latest
   goToLatest: () => {
-    document.getElementById("news-page-latest").classList.remove("exit-left", "off-right");
-    document.getElementById("news-page-latest").classList.add("active");
+    I_NEWS_PAGE_LATEST.classList.remove("exit-left", "off-right");
+    I_NEWS_PAGE_LATEST.classList.add("active");
 
-    document.getElementById("news-page-archive-list").classList.remove("active", "exit-left");
-    document.getElementById("news-page-archive-list").classList.add("off-right");
+    I_NEWS_PAGE_ARCHIVE_LIST.classList.remove("active", "exit-left");
+    I_NEWS_PAGE_ARCHIVE_LIST.classList.add("off-right");
 
     // Header
-    document.getElementById("news-title").textContent = "Developer News";
-    document.getElementById("news-back-btn").style.visibility = "hidden";
+    I_NEWS_TITLE.textContent = "Developer News";
+    I_NEWS_BACK_BTN.style.visibility = "hidden";
   },
 
   // LEVEL 1: Show Archive List
   goToArchive: () => {
     // 1. Move Latest to Left (Exit)
-    document.getElementById("news-page-latest").classList.remove("active");
-    document.getElementById("news-page-latest").classList.add("exit-left");
+    I_NEWS_PAGE_LATEST.classList.remove("active");
+    I_NEWS_PAGE_LATEST.classList.add("exit-left");
 
     // 2. Bring List to Center (Active)
-    document.getElementById("news-page-archive-list").classList.remove("off-right", "exit-left");
-    document.getElementById("news-page-archive-list").classList.add("active");
+    I_NEWS_PAGE_ARCHIVE_LIST.classList.remove("off-right", "exit-left");
+    I_NEWS_PAGE_ARCHIVE_LIST.classList.add("active");
 
     // 3. Move Entry to Right (Off) - In case we are coming back from an entry
     document.getElementById("news-page-archive-entry").classList.remove("active", "exit-left");
     document.getElementById("news-page-archive-entry").classList.add("off-right");
 
     // Header
-    document.getElementById("news-title").textContent = "News Archive";
-    const btn = document.getElementById("news-back-btn");
-    btn.style.visibility = "visible";
-    btn.onclick = () => newsNav.goToLatest(); // Back goes to Latest
+    I_NEWS_TITLE.textContent = "News Archive";
+    I_NEWS_BACK_BTN.style.visibility = "visible";
+    I_NEWS_BACK_BTN.onclick = () => newsNav.goToLatest(); // Back goes to Latest
 
     // Render List if empty
     const body = document.getElementById("news-body-archive-list");
@@ -557,8 +573,8 @@ const newsNav = {
   // LEVEL 2: Show Specific Entry
   goToEntry: (filename) => {
     // 1. Move List to Left (Exit)
-    document.getElementById("news-page-archive-list").classList.remove("active");
-    document.getElementById("news-page-archive-list").classList.add("exit-left");
+    I_NEWS_PAGE_ARCHIVE_LIST.classList.remove("active");
+    I_NEWS_PAGE_ARCHIVE_LIST.classList.add("exit-left");
 
     // 2. Bring Entry to Center (Active)
     const page = document.getElementById("news-page-archive-entry");
@@ -566,15 +582,15 @@ const newsNav = {
     page.classList.add("active");
 
     // Header
-    document.getElementById("news-title").textContent = filename.replace(".json", "");
-    const btn = document.getElementById("news-back-btn");
+    I_NEWS_TITLE.textContent = filename.replace(".json", "");
+    const btn = I_NEWS_BACK_BTN;
     btn.style.visibility = "visible";
     btn.onclick = () => newsNav.goToArchive(); // Back goes to Archive List
   },
 };
 
 // --- MAIN FETCH FUNCTION ---
-async function fetchNews(previewMode = false, specificFile = null) {
+export async function fetchNews(previewMode = false, specificFile = null) {
   try {
     const baseUrl = `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/news`;
     const url = specificFile
@@ -677,7 +693,7 @@ async function summarizeNews(btn) {
   }
 }
 
-window.toggleAdvancedScratchpad = () => {
+export const toggleAdvancedScratchpad = () => {
   state.advancedScratchpad = !state.advancedScratchpad;
 
   // Visual update for the switch in Settings
@@ -688,7 +704,7 @@ window.toggleAdvancedScratchpad = () => {
   renderScratchpad();
   saveSettings();
 };
-const escapeHTML = (str) => {
+export const escapeHTML = (str: string) => {
   if (!str) return "";
   return str
     .toString()
@@ -755,7 +771,7 @@ const aiStore = localforage.createInstance({ name: "ai_response_cache" });
 // --- SCRATCHPAD LOGIC ---
 
 // 1. ADD TO SCRATCHPAD (Robust Logic + Safe Formatting)
-window.addToScratchpad = (path, category, specificType = null) => {
+const addToScratchpad = (path, category, specificType = null) => {
   // 1. Get current content
   let current = state.scratchpadConfig || "";
   if (!current.trim()) current = "# Generated Config\n\n";
@@ -851,7 +867,7 @@ window.addToScratchpad = (path, category, specificType = null) => {
       if (char === "{") depth++;
       else if (char === "}") depth--;
       else if (depth === 0) {
-        if (/[a-zA-Z0-9_<>\.-]/.test(char) && !inAssign) {
+        if (/[a-zA-Z0-9_<>.-]/.test(char) && !inAssign) {
           count++;
           inAssign = true;
         } else if (char === ";") inAssign = false;
@@ -977,7 +993,7 @@ window.addToScratchpad = (path, category, specificType = null) => {
       renderScratchpad();
       if (typeof saveSettings === "function") saveSettings();
 
-      const panel = document.getElementById("scratchpad-panel");
+      const panel = I_SCRATCHPAD_PANEL;
       if (panel && !panel.classList.contains("visible")) panel.classList.add("visible");
 
       showToast("Added to Scratchpad");
@@ -989,7 +1005,7 @@ window.addToScratchpad = (path, category, specificType = null) => {
 };
 
 // Fix Array Deletion (Stop propagation)
-window.removeListItem = (idx, event) => {
+const removeListItem = (idx:number, event:Event) => {
   if (event) event.stopPropagation(); // Stop popup from closing
   activeListItems.splice(idx, 1);
   renderListPopupItems();
@@ -1009,30 +1025,10 @@ function renderListPopupItems() {
   c.scrollTop = c.scrollHeight;
 }
 
-// 5. EXPORT (Correct Newline Unescaping)
-window.copyScratchpadConfig = () => {
-  let content = state.scratchpadConfig;
-  content = content
-    .replace(/__BOOL:(true|false)__/g, "$1")
-    .replace(/__NUM:(\d+)__/g, "$1")
-    .replace(/__ENUM:(.*?)\|.*?__/g, '"$1"')
-    .replace(/__SB:(.*?)__/g, (m, val) => `"${val.replace(/\\n/g, "\n")}"`) // Unescape
-    .replace(/__FUNC:(.*?)__/g, (m, val) => val.replace(/\\n/g, "\n")) // Unescape
-    .replace(/__NULL:__/g, "null")
-    .replace(/__LIST:(.*?)__/g, (m, items) => {
-      if (!items) return "[ ]";
-      const quoted = items
-        .split(",")
-        .map((i) => `"${i.replace(/\\n/g, "\n")}"`)
-        .join(" ");
-      return `[ ${quoted} ]`;
-    });
-  window.copyToClipboard(content);
-};
 // 2. RENDERER
 // 1. FIXED SERIALIZER: Handles multiple badges per line individually
-window.getScratchpadContent = () => {
-  const el = document.getElementById("sp-visual-view");
+const getScratchpadContent = () => {
+  const el = I_SP_VISUAL_VIEW
   let text = "";
 
   // Helper to generate token string from a specific badge node
@@ -1102,8 +1098,8 @@ window.getScratchpadContent = () => {
 };
 
 // 2. FIXED RENDERER: Supports multiple tokens per line + Syntax Highlighting
-window.renderScratchpad = () => {
-  const el = document.getElementById("sp-visual-view");
+export const renderScratchpad = () => {
+  const el = I_SP_VISUAL_VIEW
   const text = state.scratchpadConfig || "";
 
   if (!text.trim()) {
@@ -1117,7 +1113,7 @@ window.renderScratchpad = () => {
     escapeHTML(str).replace(/^(\s+)/, (match) => "&nbsp;".repeat(match.length));
 
   // Common Regex for key-value pairs
-  const assignmentRegex = /^(\s*)([a-zA-Z0-9_.\-<>$\{}]+|"[^"]+")(\s*=\s*)(.*)/;
+  const assignmentRegex = /^(\s*)([a-zA-Z0-9_.\-<>${}]+|"[^"]+")(\s*=\s*)(.*)/;
 
   // --- RAW MODE (Clean Nix Syntax) ---
   if (!state.advancedScratchpad) {
@@ -1270,15 +1266,15 @@ window.renderScratchpad = () => {
   el.innerHTML = html;
 };
 
-window.updateState = () => {
-  state.scratchpadConfig = window.getScratchpadContent();
+const updateState = () => {
+  state.scratchpadConfig = getScratchpadContent();
   saveSettings();
 };
 
 // 4. INTERACTION HANDLERS
-window.toggleBool = (el) => {
+const toggleBool = (el) => {
   el.classList.toggle("active");
-  window.updateState();
+  updateState();
 };
 
 // Note: Inline number/list logic removed in favor of badges
@@ -1287,7 +1283,7 @@ window.toggleBool = (el) => {
 let activeBadgeEl = null;
 let activeListItems = []; // Temp storage for list builder
 
-window.openBadgePopup = (el) => {
+export const openBadgePopup = (el) => {
   const pop = document.getElementById("sp-input-popover");
   const input = document.getElementById("sp-badge-input");
   const textarea = document.getElementById("sp-badge-textarea");
@@ -1333,8 +1329,8 @@ window.openBadgePopup = (el) => {
     };
     input.onkeydown = (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") window.saveBadgeValue();
-      if (e.key === "Escape") window.closeBadgePopup();
+      if (e.key === "Enter")  saveBadgeValue();
+      if (e.key === "Escape")  closeBadgePopup();
     };
   } else if (subtype === "float") {
     title.textContent = "Edit Float";
@@ -1358,8 +1354,8 @@ window.openBadgePopup = (el) => {
     };
     input.onkeydown = (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") window.saveBadgeValue();
-      if (e.key === "Escape") window.closeBadgePopup();
+      if (e.key === "Enter")  saveBadgeValue();
+      if (e.key === "Escape")  closeBadgePopup();
     };
   } else if (isList) {
     title.textContent = "Edit List";
@@ -1384,7 +1380,7 @@ window.openBadgePopup = (el) => {
         e.preventDefault();
         addEntry();
       }
-      if (e.key === "Escape") window.closeBadgePopup();
+      if (e.key === "Escape")  closeBadgePopup();
     };
   } else if (isFunc) {
     title.textContent = "Edit Function";
@@ -1393,16 +1389,16 @@ window.openBadgePopup = (el) => {
     textarea.value = val;
     textarea.onkeydown = (e) => {
       e.stopPropagation();
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) window.saveBadgeValue();
-      if (e.key === "Escape") window.closeBadgePopup();
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey))  saveBadgeValue();
+      if (e.key === "Escape")  closeBadgePopup();
     };
   } else {
     title.textContent = "Edit Value";
     input.value = val;
     input.onkeydown = (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") window.saveBadgeValue();
-      if (e.key === "Escape") window.closeBadgePopup();
+      if (e.key === "Enter")  saveBadgeValue();
+      if (e.key === "Escape")  closeBadgePopup();
     };
   }
 
@@ -1413,7 +1409,7 @@ window.openBadgePopup = (el) => {
   pop.classList.add("visible");
 
   const badgeRect = el.getBoundingClientRect();
-  const panel = document.getElementById("scratchpad-panel");
+  const panel = I_SCRATCHPAD_PANEL;
   const panelRect = panel.getBoundingClientRect();
   const popRect = pop.getBoundingClientRect();
 
@@ -1455,28 +1451,8 @@ window.openBadgePopup = (el) => {
   } else textarea.focus();
 };
 
-window.removeListItem = (idx, event) => {
-  if (event) event.stopPropagation(); // Stop bubbling to document
-  activeListItems.splice(idx, 1);
-  renderListPopupItems();
-  document.getElementById("sp-badge-input").focus();
-};
-
-function renderListPopupItems() {
-  const c = document.getElementById("sp-list-container");
-  c.innerHTML = "";
-  activeListItems.forEach((item, idx) => {
-    const chip = document.createElement("div");
-    chip.className = "sp-popup-chip";
-    // Pass event to removeListItem
-    chip.innerHTML = `<span>${escapeHTML(item)}</span> <span class="del-btn" onclick="removeListItem(${idx}, event)">×</span>`;
-    c.appendChild(chip);
-  });
-  c.scrollTop = c.scrollHeight;
-}
-
 // 5. EXPORT (Correct Newline Unescaping)
-window.copyScratchpadConfig = () => {
+export const copyScratchpadConfig = () => {
   let content = state.scratchpadConfig;
   content = content
     .replace(/__BOOL:(true|false)__/g, "$1")
@@ -1493,10 +1469,10 @@ window.copyScratchpadConfig = () => {
         .join(" ");
       return `[ ${quoted} ]`;
     });
-  window.copyToClipboard(content);
+  copyToClipboard(content);
 };
 
-window.saveBadgeValue = () => {
+export const saveBadgeValue = () => {
   if (!activeBadgeEl) return;
   const input = document.getElementById("sp-badge-input");
   const textarea = document.getElementById("sp-badge-textarea");
@@ -1536,20 +1512,18 @@ window.saveBadgeValue = () => {
   if (val) activeBadgeEl.classList.add("filled");
   else activeBadgeEl.classList.remove("filled");
 
-  window.updateState();
+   updateState();
   renderScratchpad();
-  window.closeBadgePopup();
+   closeBadgePopup();
 };
 
 // 3. SERIALIZER
 // 3. SERIALIZER (Hardened)
-window.getScratchpadContent = () => {
-  const el = document.getElementById("sp-visual-view");
+export const getScratchpadContent2 = () => {
+  const el = I_SP_VISUAL_VIEW
   let text = "";
 
   const replaceTokenValue = (container, newToken) => {
-    // CRITICAL: Escape newlines so regex doesn't break on reload
-    const escapedToken = newToken.replace(/\n/g, "\\n");
     let line = "";
     container.childNodes.forEach((node) => {
       // Capture text nodes and known syntax spans
@@ -1614,12 +1588,12 @@ window.getScratchpadContent = () => {
 
   return text;
 };
-window.closeBadgePopup = () => {
+export const closeBadgePopup = () => {
   document.getElementById("sp-input-popover").classList.remove("visible");
   activeBadgeEl = null;
 };
 
-window.openEnumPopup = (el) => {
+export const openEnumPopup = (el) => {
   const pop = document.getElementById("sp-enum-popover");
   const list = document.getElementById("sp-enum-list");
   activeBadgeEl = el;
@@ -1636,7 +1610,7 @@ window.openEnumPopup = (el) => {
   pop.classList.add("visible");
 
   const rect = el.getBoundingClientRect();
-  const panel = document.getElementById("scratchpad-panel");
+  const panel = I_SCRATCHPAD_PANEL;
   const panelRect = panel.getBoundingClientRect();
   const popRect = pop.getBoundingClientRect();
 
@@ -1667,10 +1641,10 @@ window.openEnumPopup = (el) => {
   pop.style.visibility = "visible";
 };
 
-window.selectEnum = (val) => {
+export const selectEnum = (val) => {
   if (activeBadgeEl) {
     activeBadgeEl.innerText = val;
-    window.updateState();
+    updateState();
   }
   document.getElementById("sp-enum-popover").classList.remove("visible");
 };
@@ -1678,9 +1652,9 @@ window.selectEnum = (val) => {
 // --- LIVE FORMATTING LOGIC ---
 
 // 1. Cursor Management Helpers
-function getCursorPos(editor) {
+function getCursorPos(editor: Node) {
   const sel = window.getSelection();
-  if (!sel.rangeCount) return null;
+  if (!sel || !sel.rangeCount) return null;
   const range = sel.getRangeAt(0);
 
   // Find which line (div) the cursor is in
@@ -1747,11 +1721,11 @@ function restoreCursorPos(editor, savedPos) {
 
 // 2. The Smart Input Handler
 let renderTimeout;
-const editorEl = document.getElementById("sp-visual-view");
+const editorEl = I_SP_VISUAL_VIEW;
 
 editorEl.addEventListener("input", (e) => {
   // 1. Always save state immediately (raw text tokens)
-  state.scratchpadConfig = window.getScratchpadContent();
+  state.scratchpadConfig = getScratchpadContent();
 
   // 2. Check for Immediate Triggers (Enter, Semicolon, Closing Brace)
   // (InputType check helps avoid firing on backspace/deletes which feels jumpy)
@@ -1802,7 +1776,7 @@ editorEl.addEventListener("keydown", (e) => {
             ) {
               e.preventDefault();
               currentNode.remove();
-              state.scratchpadConfig = window.getScratchpadContent();
+              state.scratchpadConfig = getScratchpadContent();
               renderScratchpad(); // Re-render to clean up structure
               return;
             }
@@ -1829,7 +1803,7 @@ editorEl.addEventListener("keydown", (e) => {
           ) {
             e.preventDefault();
             prev.remove();
-            state.scratchpadConfig = window.getScratchpadContent();
+            state.scratchpadConfig = getScratchpadContent();
             renderScratchpad();
             return;
           }
@@ -1857,7 +1831,7 @@ editorEl.addEventListener("keydown", (e) => {
               sel.addRange(newRange);
 
               // Trigger quick save (debounce will handle the render)
-              state.scratchpadConfig = window.getScratchpadContent();
+              state.scratchpadConfig = getScratchpadContent();
             }
             return;
           }
@@ -2000,9 +1974,9 @@ function openInspector(path, meta, type) {
 }
 
 // --- GLOBAL EXPORTS ---
-window.setLoading = (isLoading) => {};
+export const setLoading = (isLoading: boolean) => {};
 
-window.toggleMenu = (triggerEl) => {
+export const toggleMenu = (triggerEl: HTMLElement) => {
   const menu = document.getElementById("menu-popover");
 
   // If we passed 'this' from HTML, use it. Otherwise fallback to the desktop ID.
@@ -2026,19 +2000,19 @@ window.toggleMenu = (triggerEl) => {
   }
 };
 
-window.toggleFavGroup = () => {
+export const toggleFavGroup = () => {
   state.favsCollapsed = !state.favsCollapsed;
   renderRegistry(state.data);
 };
 
-window.openModal = (id) => {
+export const openModal = (id) => {
   document.getElementById("menu-popover").classList.remove("visible");
   document.getElementById(`modal-${id}`).classList.add("visible");
-  if (id === "about") window.aboutNav("main");
-  if (id === "keybinds") window.renderKeybindView();
+  if (id === "about") aboutNav("main");
+  if (id === "keybinds") renderKeybindView();
 };
 
-window.closeModal = (id) => {
+export const closeModal = (id) => {
   document.getElementById(`modal-${id}`).classList.remove("visible");
   if (id === "about") {
     setTimeout(() => {
@@ -2047,44 +2021,43 @@ window.closeModal = (id) => {
   }
 };
 
-window.toggleVersionDropdown = () => {
-  const dd = document.getElementById("version-dropdown");
-  const isVisible = dd.classList.toggle("visible");
+export const toggleVersionDropdown = () => {
+  const isVisible = I_VERSION_DROPDOWN.classList.toggle("visible");
   if (isVisible) {
     setTimeout(() => {
-      const first = dd.querySelector(".version-item");
+      const first = I_VERSION_DROPDOWN.querySelector(".version-item");
       if (first) first.focus();
     }, 50);
   }
 };
 
-window.toggleTheme = () => {
+export const toggleTheme = () => {
   state.theme = state.theme === "dark" ? "light" : "dark";
   applyTheme();
   updateStyles();
   saveSettings();
 };
 
-window.toggleReducedMotion = () => {
+export const toggleReducedMotion = () => {
   state.reducedMotion = !state.reducedMotion;
   document.body.classList.toggle("reduce-motion", state.reducedMotion);
   document.getElementById("motion-row").classList.toggle("active", state.reducedMotion);
   saveSettings();
 };
 
-window.updateTransparency = (val) => {
+export const updateTransparency = (val) => {
   state.transparency = val;
   updateStyles();
   saveSettings();
 };
 
-window.updateComboTimeout = (val) => {
+export const updateComboTimeout = (val) => {
   state.comboTimeout = val;
   document.getElementById("combo-timeout-val").textContent = `${val}ms`;
   saveSettings();
 };
 
-window.saveSettings = async () => {
+export const saveSettings = async () => {
   state.ghToken = document.getElementById("gh-token-input").value;
   state.geminiKey = document.getElementById("gemini-key-input").value;
   state.customFont = document.getElementById("custom-font-input").value;
@@ -2113,7 +2086,7 @@ window.saveSettings = async () => {
   updateStyles();
 };
 
-window.formatKeybind = (str) => {
+export const formatKeybind = (str: string) => {
   if (!str) return "";
   return str
     .split(" ")
@@ -2129,7 +2102,7 @@ window.formatKeybind = (str) => {
     .join(" ");
 };
 
-window.applyKbPreset = (preset) => {
+export const applyKbPreset = (preset: "standard" | "vim" | "emacs") => {
   if (preset === "standard") {
     state.keybinds = {
       search: "Ctrl+f",
@@ -2188,11 +2161,11 @@ window.applyKbPreset = (preset) => {
   document.querySelectorAll(".keybind-input").forEach((input) => {
     input.value = state.keybinds[input.dataset.bind];
   });
-  window.saveSettings();
+  saveSettings();
   showToast("Keybind Preset Applied");
 };
 
-window.closeSearch = () => {
+export const closeSearch = () => {
   const s =
     window.innerWidth < 768
       ? document.getElementById("search-bar-mobile")
@@ -2215,23 +2188,23 @@ window.closeSearch = () => {
   showToast("Search cleared");
 };
 
-window.renderKeybindView = () => {
+export const renderKeybindView = () => {
   const container = document.getElementById("kb-view-content");
   let html = '<div class="adw-group" style="margin-top:0">';
   Object.entries(state.keybinds).forEach(([k, v]) => {
-    html += `<div class="adw-row" style="min-height:44px; padding:8px 16px"><span style="text-transform:capitalize">${k.replace(/([A-Z])/g, " $1").trim()}</span><span class="kb-key">${window.formatKeybind(v)}</span></div>`;
+    html += `<div class="adw-row" style="min-height:44px; padding:8px 16px"><span style="text-transform:capitalize">${k.replace(/([A-Z])/g, " $1").trim()}</span><span class="kb-key">${ formatKeybind(v)}</span></div>`;
   });
   html += `<div class="adw-row" style="min-height:44px; padding:8px 16px"><span>Global: Command Palette</span><span class="kb-key">Ctrl+K</span></div>`;
   html += "</div>";
   container.innerHTML = html;
 };
 
-window.copyToClipboard = (text) => {
+export const copyToClipboard = (text: string) => {
   navigator.clipboard.writeText(text);
   showToast("Copied to Clipboard");
 };
 
-window.toggleFavorite = async (path, type) => {
+export const toggleFavorite = async (path, type) => {
   const key = `${type}:${path}`;
   if (state.favorites.includes(key)) {
     state.favorites = state.favorites.filter((k) => k !== key);
@@ -2264,7 +2237,7 @@ function addToRecents(path, type) {
   });
 }
 
-window.toggleSearch = () => {
+export const toggleSearch = () => {
   const s =
     window.innerWidth < 768
       ? document.getElementById("search-bar-mobile")
@@ -2397,7 +2370,7 @@ async function init() {
     });
 
     let initialMeta = null;
-    window.setLoading(true);
+    setLoading(true);
 
     const metaRes = await fetchWithAuth(
       `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/latestCommit.json`,
@@ -2437,7 +2410,7 @@ async function init() {
 
           if (isValid) {
             setTimeout(() => {
-              window.navigateToPath(path, type);
+              navigateToPath(path, type);
               if (state.focusedRow) state.focusedRow.el.scrollIntoView({ block: "center" });
             }, 100);
           } else {
@@ -2449,15 +2422,15 @@ async function init() {
       } catch (e) {
         window.location.hash = "";
         updateBreadcrumbs("", "");
-        window.navigateToPath(null, null);
+        navigateToPath(null, null);
         showToast(`Error: ${e.message}`, true);
       }
     } else {
       updateBreadcrumbs("", "");
-      window.navigateToPath(null, null);
+      navigateToPath(null, null);
     }
 
-    window.setLoading(false);
+    setLoading(false);
 
     setInterval(
       () =>
@@ -2469,7 +2442,7 @@ async function init() {
     );
   } catch (e) {
     loader.innerHTML = `<div style="color:var(--accent-red)">Failed to initialize: ${e.message}</div>`;
-    window.setLoading(false);
+    setLoading(false);
   }
   loader.style.display = "none";
 }
@@ -2495,13 +2468,9 @@ function updateOnlineStatus() {
 async function fetchWithAuth(url) {
   const headers = {};
   if (state.ghToken) headers["Authorization"] = `Bearer ${state.ghToken}`;
-  try {
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res;
-  } catch (e) {
-    throw e;
-  }
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res;
 }
 
 async function loadVersion(v) {
@@ -2509,7 +2478,7 @@ async function loadVersion(v) {
   const root = document.getElementById("registry-root");
   root.style.display = "none";
   loader.style.display = "flex";
-  window.setLoading(true);
+   setLoading(true);
 
   try {
     let data = await dataStore.getItem(`version_${v}`);
@@ -2525,14 +2494,14 @@ async function loadVersion(v) {
     renderRegistry(data);
     updateVersionUI();
     updateBreadcrumbs("", "");
-    window.navigateToPath(null, null);
+     navigateToPath(null, null);
     updateCacheStats();
     updateOnlineStatus();
   } catch (e) {
-    loader.innerHTML = `<div>Error loading ${v}</div>`;
+    loader.innerHTML = `<div>Error loading ${v}: ${e}</div>`;
   }
 
-  window.setLoading(false);
+   setLoading(false);
   loader.style.display = "none";
   root.style.display = "block";
 }
@@ -2542,7 +2511,7 @@ async function updateCacheStats() {
   document.getElementById("cache-stats").textContent = `${keys.length} items cached`;
 }
 
-window.updateVersionUI = () => {
+export const updateVersionUI = () => {
   if (!state.selectedVersion) state.selectedVersion = "Latest Commit";
 
   const label = state.selectedVersion === "latestCommit" ? "Latest Commit" : state.selectedVersion;
@@ -2590,7 +2559,7 @@ function renderRegistry(data) {
   if (state.favorites.length > 0) {
     const title = document.createElement("div");
     title.className = `adw-group-title fav-header ${state.favsCollapsed ? "collapsed" : ""}`;
-    title.onclick = window.toggleFavGroup;
+    title.onclick = toggleFavGroup;
     title.innerHTML = `Favorites <span class="fav-caret">▼</span>`;
     root.appendChild(title);
 
@@ -3147,8 +3116,7 @@ document.getElementById("search-input").addEventListener("input", (e) => {
 });
 
 // --- UPDATED NAVIGATION LOGIC ---
-
-window.cycleSearchMatches = (direction = 1) => {
+export const cycleSearchMatches = (direction = 1) => {
   if (!state.searchMasterIndex || state.searchMasterIndex.length === 0) return;
 
   // 1. Calculate New Index
@@ -3183,7 +3151,7 @@ window.cycleSearchMatches = (direction = 1) => {
       document.querySelectorAll(".selected").forEach((r) => r.classList.remove("selected"));
       row.classList.add("selected");
       state.focusedRow.el = row;
-      window.smartScroll(row);
+      smartScroll(row);
     } else if (attempts < 10) {
       attempts++;
       requestAnimationFrame(findAndSelect);
@@ -3270,11 +3238,11 @@ document.getElementById("search-input-mobile").addEventListener("input", (e) => 
   });
 });
 
-window.navigateToPath = async (path, type) => {
+export const navigateToPath = async (path, type) => {
   if (!path && !type) {
     try {
       history.replaceState(null, null, " ");
-    } catch (e) {}
+    } catch {}
     document.querySelectorAll(".tree-row.selected").forEach((r) => r.classList.remove("selected"));
     state.focusedRow = null;
     updateBreadcrumbs("", "");
@@ -3301,8 +3269,8 @@ window.navigateToPath = async (path, type) => {
                 <div id="start-news-preview"></div>
 
                 <div style="font-size: 0.75rem; margin-top: 24px; color: var(--secondary-label); padding: 0 20px;">
-                    <code>${window.formatKeybind(state.keybinds.search)}</code> to search<br>
-                    <code>${window.formatKeybind(state.keybinds.up)}/${window.formatKeybind(state.keybinds.down)}</code> to navigate
+                    <code>${formatKeybind(state.keybinds.search)}</code> to search<br>
+                    <code>${formatKeybind(state.keybinds.up)}/${formatKeybind(state.keybinds.down)}</code> to navigate
                 </div>
                 <div style="text-align:left; margin-top:32px; padding: 0 20px;">
                     ${recentHtml}
@@ -3436,7 +3404,7 @@ async function askGemini(path, type) {
   textEl.innerHTML =
     '<div style="display:flex; align-items:center; gap:12px; color:var(--dim-label)"><div class="spinner" style="width:20px; height:20px; border-width:2px; margin:0"></div>Analyzing registry & source...</div>';
 
-  window.setLoading(true);
+  setLoading(true);
 
   const meta = state.currentMeta || {};
   const context = type === "options" ? "NixOS Option" : "Nix Package";
@@ -3477,7 +3445,7 @@ async function askGemini(path, type) {
     textEl.innerHTML = `<span style="color:var(--accent-red)">Error: ${e.message}. Please try again later.</span>`;
   } finally {
     container.classList.remove("ai-gradient-border");
-    window.setLoading(false);
+    setLoading(false);
   }
 }
 
@@ -3504,7 +3472,7 @@ document.addEventListener("keydown", (e) => {
       if (current) current.click();
       return;
     } else if (e.key === "Escape") {
-      window.toggleCommandPalette();
+      toggleCommandPalette();
       return;
     }
 
@@ -3522,10 +3490,10 @@ document.addEventListener("keydown", (e) => {
       e.target.blur();
       document.getElementById("search-history").classList.remove("visible");
       if (e.target.id === "sp-visual-view") {
-        document.getElementById("scratchpad-panel").classList.remove("visible");
+        I_SCRATCHPAD_PANEL.classList.remove("visible");
       }
       if (e.target.id === "search-input" || e.target.id === "search-input-mobile") {
-        window.toggleSearch();
+        toggleSearch();
       }
     }
 
@@ -3558,7 +3526,7 @@ document.addEventListener("keydown", (e) => {
   // Global Shortcuts (Ctrl+K, P)
   if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "p")) {
     e.preventDefault();
-    window.toggleCommandPalette();
+    toggleCommandPalette();
     return;
   }
 
@@ -3599,24 +3567,24 @@ document.addEventListener("keydown", (e) => {
       searchInput.select();
       renderSearchHistory();
     } else {
-      window.toggleSearch();
+      toggleSearch();
     }
     matched = true;
   } else if (check(kb.copyId)) {
-    if (state.focusedRow) window.copyToClipboard(state.focusedRow.path);
+    if (state.focusedRow) copyToClipboard(state.focusedRow.path);
     matched = true;
   } else if (check(kb.copyDesc)) {
     const desc = document.getElementById("inspector-desc-text");
-    if (desc) window.copyToClipboard(desc.textContent);
+    if (desc) copyToClipboard(desc.textContent);
     matched = true;
   } else if (check(kb.version)) {
-    window.toggleVersionDropdown();
+    toggleVersionDropdown();
     matched = true;
   } else if (check(kb.settings)) {
-    window.openModal("settings");
+    openModal("settings");
     matched = true;
   } else if (check(kb.about)) {
-    window.openModal("about");
+    openModal("about");
     matched = true;
   } else if (check(kb.up)) {
     e.preventDefault();
@@ -3636,11 +3604,11 @@ document.addEventListener("keydown", (e) => {
     matched = true;
   } else if (check(kb.nextMatch)) {
     e.preventDefault();
-    window.cycleSearchMatches(1);
+     cycleSearchMatches(1);
     matched = true;
   } else if (check(kb.prevMatch)) {
     e.preventDefault();
-    window.cycleSearchMatches(-1);
+     cycleSearchMatches(-1);
     matched = true;
   }
 
@@ -3651,7 +3619,7 @@ document.addEventListener("keydown", (e) => {
         : document.getElementById("search-bar").classList.contains("visible");
     if (isSearchVisible) {
       e.preventDefault();
-      window.closeSearch();
+      closeSearch();
       return;
     }
   }
@@ -3686,13 +3654,13 @@ document.addEventListener("keydown", (e) => {
     if (searchActive && state.searchMasterIndex?.length > 0) {
       // Force the index back to the first element
       state.searchMatchIndex = -1;
-      window.cycleSearchMatches(1);
+       cycleSearchMatches(1);
     } else {
       // Standard Tree: Find first visible row and pin to top
       const rows = Array.from(document.querySelectorAll(".tree-row, .virtual-row")).filter((r) =>
         isRowVisible(r),
       );
-      if (rows.length > 0) window.selectAndScroll(rows[0]);
+      if (rows.length > 0)  selectAndScroll(rows[0]);
     }
     keyBuffer = [];
   }
@@ -3702,13 +3670,13 @@ document.addEventListener("keydown", (e) => {
     if (searchActive && state.searchMasterIndex?.length > 0) {
       // Force the index to the last element
       state.searchMatchIndex = state.searchMasterIndex.length - 2;
-      window.cycleSearchMatches(1);
+       cycleSearchMatches(1);
     } else {
       // Standard Tree: Find last visible row and pin to top
       const rows = Array.from(document.querySelectorAll(".tree-row, .virtual-row")).filter((r) =>
         isRowVisible(r),
       );
-      if (rows.length > 0) window.selectAndScroll(rows[rows.length - 1]);
+      if (rows.length > 0)  selectAndScroll(rows[rows.length - 1]);
     }
     keyBuffer = [];
   }
@@ -3745,7 +3713,7 @@ keyInputs.forEach((input) => {
       recordBuffer = [];
       input.value = chord;
       state.keybinds[input.dataset.bind] = chord;
-      window.saveSettings();
+       saveSettings();
       input.blur();
       showToast(`Bound to ${chord}`);
       return;
@@ -3759,7 +3727,7 @@ keyInputs.forEach((input) => {
       const finalBind = recordBuffer.join(" ");
       input.value = finalBind;
       state.keybinds[input.dataset.bind] = finalBind;
-      window.saveSettings();
+       saveSettings();
       input.blur();
       showToast(`Bound to ${finalBind}`);
       recordBuffer = [];
@@ -3767,12 +3735,12 @@ keyInputs.forEach((input) => {
   });
 });
 
-window.clearScratchpad = () => {
+export const clearScratchpad = () => {
   state.scratchpadConfig = "";
   renderScratchpad();
   saveSettings();
 };
-function updateBreadcrumbs(path, type) {
+function updateBreadcrumbs(path?: string, type?: string) {
   const container = document.getElementById("breadcrumbs");
   const iconSvg = `<svg width="16" height="16" viewBox="0 0 16 16" fill="var(--dim-label)" xmlns="http://www.w3.org/2000/svg">
                             <g clip-path="url(#clip0_272_121)"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.5 7C10.567 7 9 5.433 9 3.5C9 1.567 10.567 0 12.5 0C14.433 0 16 1.567 16 3.5C16 5.433 14.433 7 12.5 7ZM12.5 1.5C13.6046 1.5 14.5 2.39543 14.5 3.5C14.5 4.60457 13.6046 5.5 12.5 5.5C11.3954 5.5 10.5 4.60457 10.5 3.5C10.5 2.39543 11.3954 1.5 12.5 1.5Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M12.5 16C10.567 16 9 14.433 9 12.5C9 10.567 10.567 9 12.5 9C14.433 9 16 10.567 16 12.5C16 14.433 14.433 16 12.5 16ZM12.5 10.5C13.6046 10.5 14.5 11.3954 14.5 12.5C14.5 13.6046 13.6046 14.5 12.5 14.5C11.3954 14.5 10.5 13.6046 10.5 12.5C10.5 11.3954 11.3954 10.5 12.5 10.5Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M3.5 11.5C1.567 11.5 0 9.933 0 8C0 6.067 1.567 4.5 3.5 4.5C5.433 4.5 7 6.067 7 8C7 9.933 5.433 11.5 3.5 11.5ZM3.5 6C4.60457 6 5.5 6.89543 5.5 8C5.5 9.10457 4.60457 10 3.5 10C2.39543 10 1.5 9.10457 1.5 8C1.5 6.89543 2.39543 6 3.5 6Z" fill="currentColor"></path></g><defs><clipPath id="clip0_272_121"><rect width="16" height="16" fill="currentColor"></rect></clipPath></defs>
@@ -3798,7 +3766,7 @@ function updateBreadcrumbs(path, type) {
   container.scrollLeft = container.scrollWidth;
 }
 
-window.handleLocalUpload = (input) => {
+export const handleLocalUpload = (input) => {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -3813,7 +3781,7 @@ window.handleLocalUpload = (input) => {
       navigateToPath(null, null);
       updateOnlineStatus();
       showToast("Local Configuration Loaded");
-      document.getElementById("version-dropdown").classList.remove("visible");
+      I_VERSION_DROPDOWN.classList.remove("visible");
     } catch (err) {
       showToast("Error: Invalid JSON File");
       console.error(err);
@@ -3823,7 +3791,7 @@ window.handleLocalUpload = (input) => {
   input.value = ""; // Reset
 };
 
-window.clearDataCache = async () => {
+export const clearDataCache = async () => {
   await dataStore.clear();
   showToast("Cache cleared. Refreshing...");
   setTimeout(() => location.reload(), 1000);
@@ -3840,7 +3808,7 @@ const LICENSE_FALLBACK = `
 *Note: This is a local fallback.*
         `;
 
-window.aboutNav = async (target) => {
+export const aboutNav = async (target: "main" | "legal" | "credits") => {
   const main = document.getElementById("about-main");
   const legal = document.getElementById("about-legal");
   const credits = document.getElementById("about-credits");
@@ -3876,7 +3844,7 @@ window.aboutNav = async (target) => {
           const text = await res.text();
           document.getElementById("legal-content").innerHTML = marked.parse(text);
           document.getElementById("legal-loader").style.display = "none";
-        } catch (e) {
+        } catch {
           document.getElementById("legal-loader").style.display = "none";
           document.getElementById("legal-content").innerHTML = marked.parse(LICENSE_FALLBACK);
         }
@@ -3891,7 +3859,7 @@ window.aboutNav = async (target) => {
   }
 };
 
-window.showMaintainerPopup = (id, data, targetEl) => {
+const showMaintainerPopup = (id, data, targetEl) => {
   const popup = document.getElementById("maintainer-popup");
   const arrow = document.getElementById("mp-arrow");
   const content = document.getElementById("mp-content");
@@ -4014,7 +3982,7 @@ function flattenTreeIterative(sourceData, type) {
   return result;
 }
 
-window.expandTree = window.unwrapTree = () => {
+const expandTree = () => {
   let processedViaVirtual = false;
 
   // 1. Handle Virtual Scrollers (Large Lists)
@@ -4074,7 +4042,7 @@ window.expandTree = window.unwrapTree = () => {
   if (!processedViaVirtual) showToast("Tree expanded");
 };
 
-window.collapseTree = () => {
+const collapseTree = () => {
   // 1. Handle Standard DOM Trees
   document
     .querySelectorAll(".tree-children-wrapper.open")
@@ -4113,45 +4081,45 @@ const COMMANDS = [
     bindKey: "settings",
     label: "Open Settings",
     shortcut: "Ctrl+.",
-    action: () => window.openModal("settings"),
+    action: () =>  openModal("settings"),
   },
   {
     id: "keybinds",
     label: "View Keybinds",
     shortcut: "Ctrl+/",
-    action: () => window.openModal("keybinds"),
+    action: () =>  openModal("keybinds"),
   },
   {
     id: "about",
     bindKey: "about",
     label: "Open About",
     shortcut: "Ctrl+Shift+A",
-    action: () => window.openModal("about"),
+    action: () => openModal("about"),
   },
-  { id: "theme", label: "Toggle Theme", action: () => window.toggleTheme() },
-  { id: "motion", label: "Toggle Reduced Motion", action: () => window.toggleReducedMotion() },
-  { id: "scratchpad", label: "Toggle Scratchpad", action: () => window.toggleScratchpad() },
+  { id: "theme", label: "Toggle Theme", action: () => toggleTheme() },
+  { id: "motion", label: "Toggle Reduced Motion", action: () => toggleReducedMotion() },
+  { id: "scratchpad", label: "Toggle Scratchpad", action: () => toggleScratchpad() },
   {
     id: "add_scratchpad",
     label: "Add to Scratchpad",
     action: () => {
-      if (state.focusedRow) window.addToScratchpad(state.focusedRow.path, state.focusedRow.type);
+      if (state.focusedRow) addToScratchpad(state.focusedRow.path, state.focusedRow.type);
     },
   },
-  { id: "cache", label: "Clear Registry Cache", action: () => window.clearDataCache() },
-  { id: "random", label: "Surprise Me (Random Package)", action: () => window.navigateRandom() },
+  { id: "cache", label: "Clear Registry Cache", action: () => clearDataCache() },
+  { id: "random", label: "Surprise Me (Random Package)", action: () => navigateRandom() },
   {
     id: "github",
     label: "Open GitHub Repo",
     action: () => window.open("https://github.com/" + CONFIG.OWNER + "/" + CONFIG.REPO, "_blank"),
   },
-  { id: "collapse", label: "Collapse Tree", action: () => window.collapseTree() },
-  { id: "expand", label: "Unwrap Tree (Expand All)", action: () => window.expandTree() },
+  { id: "collapse", label: "Collapse Tree", action: () => collapseTree() },
+  { id: "expand", label: "Unwrap Tree (Expand All)", action: () => expandTree() },
   {
     id: "fav",
     label: "Toggle Favorite",
     action: () => {
-      if (state.focusedRow) window.toggleFavorite(state.focusedRow.path, state.focusedRow.type);
+      if (state.focusedRow) toggleFavorite(state.focusedRow.path, state.focusedRow.type);
     },
   },
   {
@@ -4159,7 +4127,7 @@ const COMMANDS = [
     bindKey: "version",
     label: "Change Version",
     shortcut: "Ctrl+,",
-    action: () => window.toggleVersionDropdown(),
+    action: () => toggleVersionDropdown(),
   },
   {
     id: "copy_id",
@@ -4167,7 +4135,7 @@ const COMMANDS = [
     label: "Copy Identifier",
     shortcut: "Ctrl+C",
     action: () => {
-      if (state.focusedRow) window.copyToClipboard(state.focusedRow.path);
+      if (state.focusedRow) copyToClipboard(state.focusedRow.path);
     },
   },
   {
@@ -4176,7 +4144,7 @@ const COMMANDS = [
     label: "Copy Description",
     shortcut: "Ctrl+Shift+C",
     action: () => {
-      if (state.currentMeta?.description) window.copyToClipboard(state.currentMeta.description);
+      if (state.currentMeta?.description) copyToClipboard(state.currentMeta.description);
     },
   },
   {
@@ -4184,7 +4152,7 @@ const COMMANDS = [
     label: "Copy Documentation",
     action: () => {
       if (state.currentMeta?.longDescription)
-        window.copyToClipboard(state.currentMeta.longDescription);
+         copyToClipboard(state.currentMeta.longDescription);
     },
   },
   {
@@ -4198,7 +4166,7 @@ const COMMANDS = [
   },
 ];
 
-window.toggleCommandPalette = () => {
+export const toggleCommandPalette = () => {
   document.getElementById("menu-popover").classList.remove("visible");
   const el = document.getElementById("modal-palette");
   const visible = el.classList.toggle("visible");
@@ -4256,7 +4224,7 @@ function renderCommandList(items, selectedIndex = 0) {
 
     let rawKey =
       cmd.bindKey && state.keybinds[cmd.bindKey] ? state.keybinds[cmd.bindKey] : cmd.shortcut;
-    const displayKey = window.formatKeybind(rawKey);
+    const displayKey =  formatKeybind(rawKey);
 
     const div = document.createElement("div");
     div.className = `command-item ${isSelected ? "active" : ""}`;
@@ -4266,7 +4234,7 @@ function renderCommandList(items, selectedIndex = 0) {
       state.commandHistory = [cmd.id, ...state.commandHistory.filter((id) => id !== cmd.id)];
       saveSettings();
 
-      window.toggleCommandPalette();
+       toggleCommandPalette();
       cmd.action();
     };
     list.appendChild(div);
@@ -4319,7 +4287,7 @@ function addToSearchHistory(term) {
 }
 
 // --- RANDOM NAVIGATION ---
-window.navigateRandom = () => {
+export const navigateRandom = () => {
   if (!state.data) return;
   const keys = [];
   // Flatten options and pkgs
@@ -4340,24 +4308,24 @@ window.navigateRandom = () => {
   });
   if (keys.length > 0) {
     const rand = keys[Math.floor(Math.random() * keys.length)];
-    window.navigateToPath(rand.path, rand.type);
+     navigateToPath(rand.path, rand.type);
     showToast(`Random: ${rand.path}`);
   }
 };
 
-window.goToParent = (path, type) => {
+const goToParent = (path, type) => {
   if (!path.includes(".")) {
-    window.navigateToPath("", type);
+    navigateToPath("", type);
   } else {
     const parent = path.substring(0, path.lastIndexOf("."));
-    window.navigateToPath(parent, type);
+    navigateToPath(parent, type);
   }
 };
 
 // --- UTILS ---
 // --- UPDATED NAVIGATION & SCROLLING LOGIC ---
 
-window.smartScroll = (el) => {
+const smartScroll = (el) => {
   if (!el) return;
 
   const scroller =
@@ -4401,7 +4369,7 @@ function selectAndScroll(el) {
   smartScroll(el);
 }
 
-window.selectVirtualItem = (scroller, index) => {
+const selectVirtualItem = (scroller, index) => {
   const item = scroller.items[index];
   if (!item) return;
 
@@ -4470,24 +4438,24 @@ function handleNav(action) {
       if (action === "down") {
         // Only increment if not at the very end of this scroller
         if (currentIndex < items.length - 1) {
-          window.selectVirtualItem(activeScroller, currentIndex + 1);
+           selectVirtualItem(activeScroller, currentIndex + 1);
         } else {
           // OPTIONAL: Jump to the next category's scroller if at the end
           const sIdx = state.activeScrollers.findIndex((s) => s.scroller === activeScroller);
           if (sIdx < state.activeScrollers.length - 1) {
-            window.selectVirtualItem(state.activeScrollers[sIdx + 1].scroller, 0);
+             selectVirtualItem(state.activeScrollers[sIdx + 1].scroller, 0);
           }
         }
         return;
       } else if (action === "up") {
         if (currentIndex > 0) {
-          window.selectVirtualItem(activeScroller, currentIndex - 1);
+           selectVirtualItem(activeScroller, currentIndex - 1);
         } else {
           // OPTIONAL: Jump to previous category's scroller
           const sIdx = state.activeScrollers.findIndex((s) => s.scroller === activeScroller);
           if (sIdx > 0) {
             const prevScroller = state.activeScrollers[sIdx - 1].scroller;
-            window.selectVirtualItem(prevScroller, prevScroller.items.length - 1);
+             selectVirtualItem(prevScroller, prevScroller.items.length - 1);
           }
         }
         return;
@@ -4524,7 +4492,7 @@ document.addEventListener("click", (e) => {
     // If visible, and click is NOT inside el, and NOT inside trigger
     if (el.classList.contains("visible")) {
       if (!e.target.closest(`#${id}`) && (!triggerSelector || !e.target.closest(triggerSelector))) {
-        if (id === "sp-input-popover") window.closeBadgePopup();
+        if (id === "sp-input-popover")  closeBadgePopup();
         else if (id === "sp-enum-popover")
           document.getElementById("sp-enum-popover").classList.remove("visible");
         else el.classList.remove("visible");
@@ -4567,3 +4535,947 @@ document.querySelectorAll('input[name="accent"]').forEach((radio) => {
 });
 
 init();
+</script>
+
+<div class="sheet-backdrop" id="sheet-backdrop" onclick={closeAllSheets}></div>
+<div class="pane-left">
+	<div class="header-bar">
+		<button class="adw-button icon-only" onclick={toggleScratchpad} title="Search">
+			<svg
+				width="16"
+				height="16"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2.5"
+				viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg
+			>
+		</button>
+		<div class="header-brand">
+			<svg
+				width="16"
+				height="16"
+				viewBox="0 0 16 16"
+				fill="none"
+				xmlns="http://www.w3.org/2000/svg"
+			>
+				<g clip-path="url(#clip0_272_121)"
+					><path
+						fill-rule="evenodd"
+						clip-rule="evenodd"
+						d="M12.5 7C10.567 7 9 5.433 9 3.5C9 1.567 10.567 0 12.5 0C14.433 0 16 1.567 16 3.5C16 5.433 14.433 7 12.5 7ZM12.5 1.5C13.6046 1.5 14.5 2.39543 14.5 3.5C14.5 4.60457 13.6046 5.5 12.5 5.5C11.3954 5.5 10.5 4.60457 10.5 3.5C10.5 2.39543 11.3954 1.5 12.5 1.5Z"
+					/><path
+						fill-rule="evenodd"
+						clip-rule="evenodd"
+						d="M12.5 16C10.567 16 9 14.433 9 12.5C9 10.567 10.567 9 12.5 9C14.433 9 16 10.567 16 12.5C16 14.433 14.433 16 12.5 16ZM12.5 10.5C13.6046 10.5 14.5 11.3954 14.5 12.5C14.5 13.6046 13.6046 14.5 12.5 14.5C11.3954 14.5 10.5 13.6046 10.5 12.5C10.5 11.3954 11.3954 10.5 12.5 10.5Z"
+					/><path
+						fill-rule="evenodd"
+						clip-rule="evenodd"
+						d="M3.5 11.5C1.567 11.5 0 9.933 0 8C0 6.067 1.567 4.5 3.5 4.5C5.433 4.5 7 6.067 7 8C7 9.933 5.433 11.5 3.5 11.5ZM3.5 6C4.60457 6 5.5 6.89543 5.5 8C5.5 9.10457 4.60457 10 3.5 10C2.39543 10 1.5 9.10457 1.5 8C1.5 6.89543 2.39543 6 3.5 6Z"
+						fill="currentColor"
+					/></g
+				><defs
+					><clipPath id="clip0_272_121"
+						><rect width="16" height="16" fill="currentColor" /></clipPath
+					></defs
+				>
+			</svg>
+			<span>ZenPkgs</span>
+		</div>
+		<button
+			class="adw-button icon-only"
+			id="menu-btn"
+			onclick={() => toggleMenu(this)}
+			style="position: relative;"
+		>
+			<svg
+				width="18"
+				height="18"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg
+			>
+			<!-- Notification Dot -->
+			<div
+				id="btn-news-badge"
+				style="position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-red); border-radius:50%; display:none;"
+			></div>
+		</button>
+	</div>
+	<div class="sidebar-content" id="sidebar-body">
+		<!-- Sidebar content injected dynamically via JS -->
+	</div>
+</div>
+
+<div class="pane-right">
+	<div class="header-bar">
+		<div class="mobile-header-bar">
+			<div class="search-wrapper" id="search-bar-mobile">
+				<input
+					type="text"
+					class="adw-search"
+					id="search-input-mobile"
+					placeholder="Search registry..."
+				/>
+				<div id="search-history"></div>
+			</div>
+
+			<button class="adw-button icon-only mobile-nav-btn" onclick={() => toggleMenu(this)}>
+				<svg
+					width="18"
+					height="18"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg
+				>
+				<div
+					id="mobile-menu-badge"
+					style="position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-red); border-radius:50%; display:none;"
+				></div>
+			</button>
+
+			<div class="header-brand mobile-nav-brand">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 16 16"
+					fill="none"
+					xmlns="http://www.w3.org/2000/svg"
+					><g clip-path="url(#clip0_272_121)"
+						><path
+							fill-rule="evenodd"
+							clip-rule="evenodd"
+							d="M12.5 7C10.567 7 9 5.433 9 3.5C9 1.567 10.567 0 12.5 0C14.433 0 16 1.567 16 3.5C16 5.433 14.433 7 12.5 7ZM12.5 1.5C13.6046 1.5 14.5 2.39543 14.5 3.5C14.5 4.60457 13.6046 5.5 12.5 5.5C11.3954 5.5 10.5 4.60457 10.5 3.5C10.5 2.39543 11.3954 1.5 12.5 1.5Z"
+							fill="currentColor"
+						/><path
+							fill-rule="evenodd"
+							clip-rule="evenodd"
+							d="M12.5 16C10.567 16 9 14.433 9 12.5C9 10.567 10.567 9 12.5 9C14.433 9 16 10.567 16 12.5C16 14.433 14.433 16 12.5 16ZM12.5 10.5C13.6046 10.5 14.5 11.3954 14.5 12.5C14.5 13.6046 13.6046 14.5 12.5 14.5C11.3954 14.5 10.5 13.6046 10.5 12.5C10.5 11.3954 11.3954 10.5 12.5 10.5Z"
+							fill="currentColor"
+						/><path
+							fill-rule="evenodd"
+							clip-rule="evenodd"
+							d="M3.5 11.5C1.567 11.5 0 9.933 0 8C0 6.067 1.567 4.5 3.5 4.5C5.433 4.5 7 6.067 7 8C7 9.933 5.433 11.5 3.5 11.5ZM3.5 6C4.60457 6 5.5 6.89543 5.5 8C5.5 9.10457 4.60457 10 3.5 10C2.39543 10 1.5 9.10457 1.5 8C1.5 6.89543 2.39543 6 3.5 6Z"
+							fill="currentColor"
+						/></g
+					></svg
+				>
+				<span>ZenPkgs</span>
+			</div>
+
+			<button class="adw-button icon-only mobile-nav-btn" onclick={toggleSearch}>
+				<svg
+					width="16"
+					height="16"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2.5"
+					viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg
+				>
+			</button>
+		</div>
+
+		<div class="header-bar-center-stack">
+			<div class="header-bar-center-stack">
+				<div class="breadcrumbs-wrapper" id="breadcrumbs"></div>
+			</div>
+			<div class="search-wrapper" id="search-bar">
+				<input type="text" class="adw-search" id="search-input" placeholder="Search registry..." />
+				<div id="search-history"></div>
+			</div>
+
+			<!-- Surprise Me Button -->
+			<button
+				class="adw-button icon-only"
+				onclick={navigateRandom}
+				title="Surprise Me (Random Package)"
+			>
+				<svg
+					width="16"
+					height="16"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l5 5M4 4l5 5" /></svg
+				>
+			</button>
+
+			<!-- Modified Version Button containing Status Indicator -->
+			<button class="version-trigger" id="version-btn" onclick={toggleVersionDropdown}>
+				<div class="offline-indicator" id="net-status" title="Online"></div>
+				<span id="current-version">Latest Commit</span>
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"
+					><path d="M7 10l5 5 5-5z" /></svg
+				>
+			</button>
+
+			<div id="version-dropdown">
+				<div class="popover-inner">
+					<div class="version-list" id="version-list-container"></div>
+					<div class="version-footer">
+						<input
+							type="file"
+							id="universal-json-upload"
+							style="display: none;"
+							accept=".json"
+							onchange={() => handleUniversalUpload(this)}
+						/>
+
+						<!-- 1. DIFF TOGGLE -->
+						<button
+							class="refresh-btn"
+							id="btn-diff-toggle"
+							onclick={toggleDiffSelectionMode}
+							title="Toggle Diff Selection Mode"
+						>
+							<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 16 16">
+								<!-- Document Outline -->
+								<path
+									d="M3.5 2C3.5 1.44772 3.94772 1 4.5 1H10.5L13.5 4V14C13.5 14.5523 13.0523 15 12.5 15H4.5C3.94772 15 3.5 14.5523 3.5 14V2Z"
+									stroke-width="1.5"
+								/>
+								<!-- Plus (Top) -->
+								<path d="M8.5 4V8M6.5 6H10.5" stroke-width="1.5" stroke-linecap="round" />
+								<!-- Minus (Bottom) -->
+								<path d="M6.5 11H10.5" stroke-width="1.5" stroke-linecap="round" />
+							</svg>
+							Diff
+						</button>
+
+						<!-- 2. UPLOAD -->
+						<button
+							class="refresh-btn"
+							onclick={() => document.getElementById('universal-json-upload').click()}
+							title="Upload JSON"
+						>
+							<svg
+								width="16"
+								height="16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								viewBox="0 0 24 24"
+								><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline
+									points="17 8 12 3 7 8"
+								/><line x1="12" y1="3" x2="12" y2="15" /></svg
+							>
+							Upload
+						</button>
+
+						<!-- 3. RELOAD -->
+						<button
+							style="max-width: 34px"
+							class="refresh-btn icon-only"
+							id="refresh-releases-btn"
+							title="Refresh Versions"
+							onclick={fetchReleases}
+						>
+							<svg
+								width="16"
+								height="16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								viewBox="0 0 24 24"
+								><path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path
+									d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"
+								/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg
+							>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="main-content">
+		<div class="content-container">
+			<div class="loader-container" id="loader">
+				<div class="spinner"></div>
+				<div>Fetching Registry...</div>
+			</div>
+			<div id="registry-root"></div>
+		</div>
+	</div>
+</div>
+
+<!-- Scratchpad FAB & Panel -->
+<button id="scratchpad-fab" onclick={toggleScratchpad}>
+	<svg viewBox="0 0 24 24"
+		><path
+			d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"
+		/></svg
+	>
+</button>
+<div id="scratchpad-panel">
+	<div class="sp-header">
+		<span>Config Scratchpad</span>
+		<button class="window-close-button" onclick={toggleScratchpad}
+			><svg width="8" height="8" viewBox="0 0 8 8" fill="none"
+				><path
+					d="M2.5 4L0 1.5V0H1.5L4 2.5L6.5 0H8V1.5L5.5 4L8 6.5V8H6.5L4 5.5L1.5 8H0V6.5L2.5 4Z"
+					fill="currentColor"
+				/></svg
+			></button
+		>
+	</div>
+	<div id="sp-editor-container">
+		<div id="sp-visual-view" contenteditable="true" spellcheck="false"></div>
+	</div>
+
+	<div id="sp-input-popover">
+		<div class="sp-pop-header"><span id="sp-pop-title">Edit Value</span></div>
+		<div class="sp-pop-body">
+			<!-- List Container (Hidden by default) -->
+			<div
+				id="sp-list-container"
+				style="display:none; flex-wrap:wrap;  max-height:120px; overflow-y:auto;"
+			></div>
+
+			<div style="display:flex; gap:6px; align-items:center;">
+				<!-- Number Stepper Minus -->
+				<button
+					id="sp-btn-minus"
+					class="adw-button icon-only"
+					style="display:none; flex-shrink:0; width:32px;">-</button
+				>
+
+				<!-- Main Input -->
+				<input
+					type="text"
+					class="adw-input"
+					id="sp-badge-input"
+					placeholder="Enter value..."
+					autocomplete="off"
+				/>
+
+				<!-- Function Textarea -->
+				<textarea
+					class="adw-input"
+					id="sp-badge-textarea"
+					style="display:none; height:200px; font-family:var(--font-mono); font-size:0.85rem; line-height:1.4;"
+					placeholder="pkg: ..."
+				></textarea>
+
+				<!-- Plus Button (Number/List) -->
+				<button
+					id="sp-btn-plus"
+					class="adw-button icon-only"
+					style="display:none; flex-shrink:0; width:32px;">+</button
+				>
+			</div>
+		</div>
+		<div class="sp-pop-footer">
+			<button
+				class="adw-button destructive"
+				style="flex:1; justify-content:center"
+				onclick={closeBadgePopup}>Cancel</button
+			>
+			<button
+				class="adw-button"
+				style="flex:1; justify-content:center; background:var(--accent-bg); color:var(--accent-fg);"
+				onclick={saveBadgeValue}>Apply</button
+			>
+		</div>
+	</div>
+
+	<div id="sp-enum-popover">
+		<div class="sp-pop-header"><span>Select Option</span></div>
+		<div
+			class="sp-pop-body"
+			id="sp-enum-list"
+			style="padding: 6px; max-height: 200px; overflow-y: auto;"
+		></div>
+	</div>
+	<div class="sp-footer">
+		<button class="adw-button" style="flex:1" onclick={copyScratchpadConfig}>Copy Config</button>
+		<button class="adw-button destructive" style="flex:1" onclick={clearScratchpad}
+			><svg
+				width="14"
+				height="14"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				viewBox="0 0 24 24"
+				><path
+					d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+				/></svg
+			> Clear scratchpad</button
+		>
+	</div>
+</div>
+
+<!-- POPOVERS & MODALS -->
+<div id="menu-popover" class="popover-inner common-popover">
+	<div class="menu-item" onclick={() => openModal('settings')}>
+		Settings <span style="opacity:0.5; font-size:0.8em; margin-left:8px">Ctrl+.</span>
+	</div>
+	<div class="menu-item" onclick={() => openModal('keybinds')}>
+		Keybinds <span style="opacity:0.5; font-size:0.8em; margin-left:8px">Ctrl+/</span>
+	</div>
+	<!-- NEW ITEM -->
+	<div
+		class="menu-item"
+		onclick={() => {
+			openModal('news');
+			fetchNews(false);
+		}}
+	>
+		Developer News <span
+			id="menu-news-badge"
+			style="display:none; color:var(--accent-red); margin-left:4px;">●</span
+		>
+	</div>
+	<div class="menu-item" onclick={toggleCommandPalette}>
+		Command Palette <span style="opacity:0.5; font-size:0.8em; margin-left:8px">Ctrl+K</span>
+	</div>
+	<div class="menu-item" onclick={() => openModal('about')}>
+		About <span style="opacity:0.5; font-size:0.8em; margin-left:8px">Ctrl+Shift+A</span>
+	</div>
+</div>
+
+<!-- COMMAND PALETTE MODAL -->
+<div class="overlay-backdrop" id="modal-palette">
+	<div class="adw-window command-palette" style="width:600px">
+		<div class="command-input-wrapper">
+			<input type="text" class="command-input" id="cmd-input" placeholder="Type a command..." />
+		</div>
+		<div class="command-list" id="cmd-list">
+			<!-- Items populated via JS -->
+		</div>
+	</div>
+</div>
+
+<div class="overlay-backdrop" id="modal-news">
+	<div class="adw-window" style="width: 600px">
+		<div class="dialog-header">
+			<button class="adw-button icon-only" id="news-back-btn" style="visibility: hidden;">
+				<svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 0 16 16" width="16px"
+					><path
+						d="m 9.292969 13.707031 l -5 -5 c -0.390625 -0.390625 -0.390625 -1.023437 0 -1.414062 l 5 -5 c 0.390625 -0.390625 1.023437 -0.390625 1.414062 0 s 0.390625 1.023437 0 1.414062 l -4.292969 4.292969 l 4.292969 4.292969 c 0.390625 0.390625 0.390625 1.023437 0 1.414062 s -1.023437 0.390625 -1.414062 0 z m 0 0"
+						fill="currentColor"
+						fill-rule="evenodd"
+					/></svg
+				>
+			</button>
+			<span id="news-title">Developer News</span>
+			<button class="window-close-button" onclick={() => closeModal('news')}>
+				<svg width="8" height="8" viewBox="0 0 8 8" fill="none"
+					><path
+						d="M2.5 4L0 1.5V0H1.5L4 2.5L6.5 0H8V1.5L5.5 4L8 6.5V8H6.5L4 5.5L1.5 8H0V6.5L2.5 4Z"
+						fill="currentColor"
+					/></svg
+				>
+			</button>
+		</div>
+		<div class="window-content about-stack-container">
+			<div id="news-page-latest" class="stack-page active">
+				<div id="news-body-latest"></div>
+			</div>
+
+			<div id="news-page-archive-list" class="stack-page off-right">
+				<div id="news-body-archive-list"></div>
+			</div>
+
+			<div id="news-page-archive-entry" class="stack-page off-right">
+				<div id="news-body-archive-entry"></div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="overlay-backdrop" id="modal-settings">
+	<div class="adw-window">
+		<div class="dialog-header">
+			<div style="width:24px"></div>
+			<span>Settings</span>
+			<button class="window-close-button" onclick={() => closeModal('settings')}>
+				<svg width="8" height="8" viewBox="0 0 8 8" fill="none"
+					><path
+						d="M2.5 4L0 1.5V0H1.5L4 2.5L6.5 0H8V1.5L5.5 4L8 6.5V8H6.5L4 5.5L1.5 8H0V6.5L2.5 4Z"
+						fill="currentColor"
+					/></svg
+				>
+			</button>
+		</div>
+		<div class="window-body">
+			<div class="adw-group-title">Appearance</div>
+			<div class="adw-group">
+				<div class="adw-row">
+					<span style="font-weight: 700;">Accent Color</span>
+					<div class="accent-picker">
+						<label class="accent-option"
+							><input type="radio" name="accent" value="blue" /><span
+								class="accent-circle"
+								style="--color: var(--accent-blue)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="teal" /><span
+								class="accent-circle"
+								style="--color: var(--accent-teal)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="green" /><span
+								class="accent-circle"
+								style="--color: var(--accent-green)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="yellow" /><span
+								class="accent-circle"
+								style="--color: var(--accent-yellow)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="orange" /><span
+								class="accent-circle"
+								style="--color: var(--accent-orange)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="red" /><span
+								class="accent-circle"
+								style="--color: var(--accent-red)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="pink" /><span
+								class="accent-circle"
+								style="--color: var(--accent-pink)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="purple" checked /><span
+								class="accent-circle"
+								style="--color: var(--accent-purple)"
+							></span></label
+						>
+						<label class="accent-option"
+							><input type="radio" name="accent" value="slate" /><span
+								class="accent-circle"
+								style="--color: var(--accent-slate)"
+							></span></label
+						>
+					</div>
+				</div>
+				<div class="adw-row adw-switch-row" onclick={toggleTheme} id="theme-row">
+					<span style="font-weight: 700;">Dark Mode</span>
+					<div class="switch-toggle"></div>
+				</div>
+				<div class="adw-row adw-switch-row" onclick={toggleReducedMotion} id="motion-row">
+					<span style="font-weight: 700;">Reduced Motion</span>
+					<div class="switch-toggle"></div>
+				</div>
+				<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+					<span style="font-weight: 700;">Transparency</span>
+					<input
+						type="range"
+						class="adw-range"
+						min="0"
+						max="1"
+						step="0.05"
+						id="transparency-slider"
+						oninput={() => updateTransparency(this.value)}
+					/>
+				</div>
+				<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+					<span style="font-weight: 700;">Custom Font Family</span>
+					<input
+						type="text"
+						class="adw-input"
+						id="custom-font-input"
+						placeholder="e.g. Inter, sans-serif"
+						onchange={saveSettings}
+					/>
+				</div>
+				<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+					<span style="font-weight: 700;">Custom CSS</span>
+					<textarea
+						class="adw-input"
+						id="custom-css-input"
+						placeholder={'.row-label { color: red !important; }'}
+						onchange={saveSettings}
+					></textarea>
+				</div>
+				<div class="adw-row adw-switch-row" onclick={toggleAdvancedScratchpad} id="sp-mode-row">
+					<span style="font-weight: 700;">Advanced Scratchpad (Badges)</span>
+					<div class="switch-toggle"></div>
+				</div>
+			</div>
+
+			<div class="adw-group-title">Keybinds</div>
+			<div class="adw-group">
+				<div class="adw-row">
+					<span style="font-weight:700">Preset</span>
+					<select class="adw-select" id="kb-preset" onchange={() => applyKbPreset(this.value)}>
+						<option value="standard">Standard (Arrows)</option>
+						<option value="vim">Vim-like (hjkl)</option>
+						<option value="emacs">Emacs-like (pnbf)</option>
+					</select>
+				</div>
+				<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+					<span style="font-weight: 700;">Combo Timeout (ms)</span>
+					<input
+						type="range"
+						class="adw-range"
+						min="100"
+						max="2000"
+						step="50"
+						id="combo-timeout-slider"
+						oninput={() => updateComboTimeout(this.value)}
+					/>
+					<span style="font-size: 0.75rem; color: var(--dim-label)" id="combo-timeout-val"
+						>500ms</span
+					>
+				</div>
+				<!-- Keybind inputs ... -->
+				<div class="adw-row">
+					<span>Search</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="search"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Up</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="up"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Down</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="down"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Left (Close/Parent)</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="left"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Right (Open/Child)</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="right"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Copy ID</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="copyId"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Copy Desc</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="copyDesc"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Switch Version</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="version"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Open Settings</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="settings"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Open About</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="about"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Go Top</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="top"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Go Bottom</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="bottom"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Next Match</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="nextMatch"
+						readonly
+					/>
+				</div>
+				<div class="adw-row">
+					<span>Previous Match</span><input
+						type="text"
+						class="adw-input keybind-input"
+						data-bind="prevMatch"
+						readonly
+					/>
+				</div>
+			</div>
+
+			<div class="adw-group-title">Connectivity</div>
+			<div class="adw-group">
+				<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+					<span style="font-weight: 700;">GitHub Token</span>
+					<input
+						type="password"
+						class="adw-input"
+						id="gh-token-input"
+						placeholder="ghp_..."
+						onchange={saveSettings}
+					/>
+					<span style="font-size: 0.75rem; color: var(--dim-label);"
+						>Used to increase API rate limits.</span
+					>
+				</div>
+			</div>
+
+			<div class="adw-group-title">Intelligence</div>
+			<div class="adw-group">
+				<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+					<span style="font-weight: 700;">Gemini API Key</span>
+					<input
+						type="password"
+						class="adw-input"
+						id="gemini-key-input"
+						placeholder="AIzaSy..."
+						onchange={saveSettings}
+					/>
+					<span style="font-size: 0.75rem; color: var(--dim-label);">
+						Required for Smart Assistant features.
+						<a
+							href="https://aistudio.google.com/app/apikey"
+							target="_blank"
+							style="color:var(--link-color)">Get a key from Google AI Studio</a
+						>
+					</span>
+				</div>
+			</div>
+
+			<div class="adw-group-title">Cache</div>
+			<div class="adw-group">
+				<div class="adw-row">
+					<div style="display: flex; flex-direction: column; gap: 4px;">
+						<span style="font-weight: 700;">Registry Data</span>
+						<span style="font-size: 0.75rem; color: var(--dim-label);"
+							><span id="cache-stats">Calculating...</span></span
+						>
+					</div>
+					<button class="adw-button destructive" onclick={clearDataCache}>Clear Cache</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- KEYBINDS VIEW MODAL -->
+<div class="overlay-backdrop" id="modal-keybinds">
+	<div class="adw-window" style="width:400px">
+		<div class="dialog-header">
+			<div style="width:24px"></div>
+			<span>Keyboard Shortcuts</span>
+			<button class="window-close-button" onclick={() => closeModal('keybinds')}>
+				<svg width="8" height="8" viewBox="0 0 8 8" fill="none"
+					><path
+						d="M2.5 4L0 1.5V0H1.5L4 2.5L6.5 0H8V1.5L5.5 4L8 6.5V8H6.5L4 5.5L1.5 8H0V6.5L2.5 4Z"
+						fill="currentColor"
+					/></svg
+				>
+			</button>
+		</div>
+		<div class="window-body" id="kb-view-content">
+			<!-- Dynamically populated -->
+		</div>
+	</div>
+</div>
+
+<!-- ABOUT MODAL -->
+<div class="overlay-backdrop" id="modal-about">
+	<div class="adw-window" id="about-window" style="max-width: 400px; text-align: center;">
+		<div class="dialog-header">
+			<button
+				class="adw-button icon-only"
+				id="about-back-btn"
+				onclick={() => aboutNav('main')}
+				style="visibility: hidden;"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 0 16 16" width="16px"
+					><path
+						d="m 9.292969 13.707031 l -5 -5 c -0.390625 -0.390625 -0.390625 -1.023437 0 -1.414062 l 5 -5 c 0.390625 -0.390625 1.023437 -0.390625 1.414062 0 s 0.390625 1.023437 0 1.414062 l -4.292969 4.292969 l 4.292969 4.292969 c 0.390625 0.390625 0.390625 1.023437 0 1.414062 s -1.023437 0.390625 -1.414062 0 z m 0 0"
+						fill="currentColor"
+						fill-rule="evenodd"
+					/></svg
+				>
+			</button>
+			<span id="about-title" class="dialog-title">About</span>
+			<button class="window-close-button" onclick={() => closeModal('about')}>
+				<svg width="8" height="8" viewBox="0 0 8 8" fill="none" xmlns="http://www.w3.org/2000/svg"
+					><path
+						d="M2.5 4L0 1.5V0H1.5L4 2.5L6.5 0H8V1.5L5.5 4L8 6.5V8H6.5L4 5.5L1.5 8H0V6.5L2.5 4Z"
+						fill="currentColor"
+					/></svg
+				>
+			</button>
+		</div>
+
+		<div class="window-content about-stack-container">
+			<!-- MAIN ABOUT PAGE -->
+			<div id="about-main" class="stack-page active">
+				<div style="margin-bottom: 24px; display: flex; justify-content: center;">
+					<svg
+						width="80"
+						height="80"
+						viewBox="0 0 16 16"
+						fill="none"
+						xmlns="http://www.w3.org/2000/svg"
+					>
+						<g clip-path="url(#clip0_272_121)"
+							><path
+								fill-rule="evenodd"
+								clip-rule="evenodd"
+								d="M12.5 7C10.567 7 9 5.433 9 3.5C9 1.567 10.567 0 12.5 0C14.433 0 16 1.567 16 3.5C16 5.433 14.433 7 12.5 7ZM12.5 1.5C13.6046 1.5 14.5 2.39543 14.5 3.5C14.5 4.60457 13.6046 5.5 12.5 5.5C11.3954 5.5 10.5 4.60457 10.5 3.5C10.5 2.39543 11.3954 1.5 12.5 1.5Z"
+								fill="currentColor"
+							/><path
+								fill-rule="evenodd"
+								clip-rule="evenodd"
+								d="M12.5 16C10.567 16 9 14.433 9 12.5C9 10.567 10.567 9 12.5 9C14.433 9 16 10.567 16 12.5C16 14.433 14.433 16 12.5 16ZM12.5 10.5C13.6046 10.5 14.5 11.3954 14.5 12.5C14.5 13.6046 13.6046 14.5 12.5 14.5C11.3954 14.5 10.5 13.6046 10.5 12.5C10.5 11.3954 11.3954 10.5 12.5 10.5Z"
+								fill="currentColor"
+							/><path
+								fill-rule="evenodd"
+								clip-rule="evenodd"
+								d="M3.5 11.5C1.567 11.5 0 9.933 0 8C0 6.067 1.567 4.5 3.5 4.5C5.433 4.5 7 6.067 7 8C7 9.933 5.433 11.5 3.5 11.5ZM3.5 6C4.60457 6 5.5 6.89543 5.5 8C5.5 9.10457 4.60457 10 3.5 10C2.39543 10 1.5 9.10457 1.5 8C1.5 6.89543 2.39543 6 3.5 6Z"
+								fill="currentColor"
+							/></g
+						><defs
+							><clipPath id="clip0_272_121"><rect width="16" height="16" fill="white" /></clipPath
+							></defs
+						>
+					</svg>
+				</div>
+				<div style="font-weight: 800; font-size: 1.5rem; margin-bottom: 8px;">ZenPkgs Browser</div>
+				<div style="margin-bottom: 24px;">
+					<span class="version-chip">v1.1.2</span>
+				</div>
+
+				<div class="adw-group">
+					<div class="adw-row" style="cursor: pointer;" onclick={() => aboutNav('legal')}>
+						<div style="font-weight:700">Legal</div>
+						<svg
+							width="16"
+							height="16"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.5"
+							viewBox="0 0 24 24"
+							style="opacity:0.5"><path d="M9 18l6-6-6-6" /></svg
+						>
+					</div>
+					<div class="adw-row" style="cursor: pointer;" onclick={() => aboutNav('credits')}>
+						<div style="font-weight:700">Credits</div>
+						<svg
+							width="16"
+							height="16"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.5"
+							viewBox="0 0 24 24"
+							style="opacity:0.5"><path d="M9 18l6-6-6-6" /></svg
+						>
+					</div>
+					<div class="adw-row">
+						<div style="font-weight:700">Registry Source</div>
+						<a href="https://github.com/zenos-n/zenpkgs" target="_blank">GitHub</a>
+					</div>
+					<div class="adw-row">
+						<div style="font-weight:700">Website Source</div>
+						<a href="https://github.com/zenos-n/zenpkgs-search" target="_blank">GitHub</a>
+					</div>
+				</div>
+			</div>
+
+			<!-- LEGAL PAGE -->
+			<div id="about-legal" class="stack-page off-right">
+				<div class="loader-container" id="legal-loader">
+					<div class="spinner"></div>
+					<div>Loading License...</div>
+				</div>
+				<div id="legal-content" class="markdown-body" style="text-align: left; padding: 0;"></div>
+			</div>
+
+			<!-- CREDITS PAGE -->
+			<div id="about-credits" class="stack-page off-right">
+				<div style="font-size: 0.9rem;">
+					<div class="adw-group-title">Core Team</div>
+					<div class="adw-group">
+						<div class="adw-row">
+							<span style="color:var(--secondary-label); font-size:0.85rem">Lead Designer</span>
+							<span style="font-weight:700">doromiert</span>
+						</div>
+						<div class="adw-row">
+							<span style="color:var(--secondary-label); font-size:0.85rem">Developers</span>
+							<span style="font-weight:700">CatNowBlue, Zaka</span>
+						</div>
+					</div>
+
+					<div class="adw-group-title">Special Thanks</div>
+					<div class="adw-group">
+						<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+							<span style="font-weight:700">Gnome</span>
+							<span style="font-size:0.8rem; color:var(--dim-label)">For Adwaita</span>
+						</div>
+						<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+							<span style="font-weight:700">Google</span>
+							<span style="font-size:0.8rem; color:var(--dim-label)">For Gemini</span>
+						</div>
+						<div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+							<span style="font-weight:700">Blade0 & Jeyphr</span>
+							<span style="font-size:0.8rem; color:var(--dim-label)">For being cool</span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div id="maintainer-popup" class="popover-inner common-popover">
+	<div class="popup-arrow" id="mp-arrow"></div>
+	<div
+		id="mp-content"
+		style="padding: 16px; gap: 10px; display: flex;flex-direction: column;"
+	></div>
+</div>
+<div id="toast">Copied to Clipboard</div>
