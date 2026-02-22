@@ -1,0 +1,4569 @@
+window.openMobileSheet = () => {
+  if (window.innerWidth <= 768) {
+    // This adds the class that triggers the CSS transition
+    document.querySelector(".pane-left").classList.add("visible");
+    document.getElementById("sheet-backdrop").classList.add("visible");
+  }
+};
+
+// --- NEW SHEET MANAGEMENT LOGIC ---
+
+window.closeAllSheets = () => {
+  // 1. Close Navigation Sheet
+  document.querySelector(".pane-left").classList.remove("visible");
+  // 2. Close Scratchpad
+  document.getElementById("scratchpad-panel").classList.remove("visible");
+  // 3. Hide Backdrop
+  document.getElementById("sheet-backdrop").classList.remove("visible");
+};
+
+window.toggleScratchpad = () => {
+  const el = document.getElementById("scratchpad-panel");
+  const isVisible = el.classList.toggle("visible");
+
+  // Initialize editor if empty
+  if (isVisible && !document.getElementById("sp-visual-view").innerText) {
+    renderScratchpad();
+  }
+
+  // --- Mobile Backdrop Logic ---
+  if (window.innerWidth <= 768) {
+    const backdrop = document.getElementById("sheet-backdrop");
+
+    if (isVisible) {
+      // If opening Scratchpad, ensure Nav Sheet is closed
+      document.querySelector(".pane-left").classList.remove("visible");
+      // Show Backdrop
+      backdrop.classList.add("visible");
+    } else {
+      // If closing Scratchpad, hide backdrop (unless Nav is somehow open)
+      if (!document.querySelector(".pane-left").classList.contains("visible")) {
+        backdrop.classList.remove("visible");
+      }
+    }
+  }
+};
+
+// Update existing openMobileSheet to ensure Scratchpad closes when Nav opens
+const originalOpenMobileSheet = window.openMobileSheet;
+window.openMobileSheet = () => {
+  // Close scratchpad before opening nav
+  document.getElementById("scratchpad-panel").classList.remove("visible");
+  if (originalOpenMobileSheet) originalOpenMobileSheet();
+};
+// Wrap existing openInspector to trigger sheet on mobile
+const originalOpenInspector = window.openInspector;
+window.openInspector = (path, meta, type) => {
+  originalOpenInspector(path, meta, type);
+  // openMobileSheet();
+};
+
+window.addEventListener("resize", () => {
+  // If we're resizing to desktop size, ensure the sheet is closed
+  if (window.innerWidth > 768) {
+    closeMobileSheet();
+  }
+  renderDashboardWidgets(document.getElementById("registry-root"));
+});
+
+// --- DASHBOARD RENDERER ---
+function renderDashboardWidgets(root) {
+  if (window.innerWidth > 768) return;
+  // On desktop, these widgets are in the sidebar, so we don't render them here.
+  const existingNews = document.getElementById("mobile-dash-news");
+  if (existingNews) existingNews.remove();
+  const existingRecents = root.querySelector(".dash-section");
+  if (existingRecents) existingRecents.remove();
+  if (window.innerWidth > 768) {
+    return;
+  }
+  // 1. News Widget Placeholder
+  // We use a specific ID so fetchNews can target it, just like the sidebar.
+  // We hide it by default so it doesn't take space until loaded.
+  const newsHtml = `<div id="mobile-dash-news" class="dash-section" style="display:none"></div>`;
+  // 3. Recents Widget (Horizontal Scroll)
+  let recentHtml = "";
+  if (state.recents.length > 0) {
+    recentHtml = `<div class="dash-section"><div class="adw-group-title">Recent</div><div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:8px;">`;
+    state.recents.forEach((r) => {
+      const [t, p] = r.split(":");
+      const name = p.split(".").pop(); // Show short name
+      recentHtml += `<div class="chip" style="background-color: color-mix(in srgb, var(--accent-bg) 15%, var(--bg-modal)); color: var(--link-color);" onclick="navigateToPath('${p}', '${t}')">${escapeHTML(name)}</div>`;
+    });
+    recentHtml += `</div></div>`;
+  }
+
+  root.innerHTML = newsHtml + recentHtml + root.innerHTML;
+
+  // TRIGGER FETCH: Populate the news widget we just created
+  setTimeout(() => {
+    if (window.fetchNews) window.fetchNews(true);
+  }, 10);
+}
+function getNewsCardHTML(news) {
+  const lastRead = localStorage.getItem("zenpkgs_news_id");
+  const isNew = lastRead !== news.id;
+
+  return `
+        <div class="news-card" onclick="openModal('news'); fetchNews(false)">
+            ${isNew ? '<div class="news-label-new">NEW</div>' : ""}
+            <div style="font-weight:700; color:var(--text-color); font-size:1rem; margin-bottom:4px;">
+                ${escapeHTML(news.title)}
+            </div>
+            <div style="font-size:0.8rem; color:var(--dim-label); margin-bottom:12px;">
+                ${escapeHTML(news.date)}
+            </div>
+            <div style="font-size:0.85rem; color:var(--link-color); font-weight:700; display:flex; align-items:center; gap:4px;">
+                Read Article 
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </div>
+        </div>
+    `;
+}
+
+// --- Helper: Update Notification Badges ---
+function updateNewsBadges(latestNewsId) {
+  const lastRead = localStorage.getItem("zenpkgs_news_id");
+  const isNew = lastRead !== latestNewsId;
+  const disp = isNew ? "block" : "none";
+
+  const btnBadge = document.getElementById("btn-news-badge"); // Desktop Sidebar Btn
+  const mobileBadge = document.getElementById("mobile-menu-badge"); // New Mobile Top Btn
+  const menuBadge = document.getElementById("menu-news-badge"); // Inside the Menu
+
+  if (btnBadge) btnBadge.style.display = disp;
+  if (mobileBadge) mobileBadge.style.display = disp; // Update mobile badge too
+  if (menuBadge) menuBadge.style.display = isNew ? "inline" : "none";
+}
+
+function isRowVisible(row) {
+  // Search results are always visible if they exist in the DOM
+  if (row.classList.contains("virtual-search-result") || row.classList.contains("virtual-row")) {
+    return true;
+  }
+  // Standard tree check
+  let parent = row.closest(".tree-children-wrapper");
+  while (parent) {
+    if (!parent.classList.contains("open")) return false;
+    parent = parent.parentElement.closest(".tree-children-wrapper");
+  }
+  return true;
+}
+// --- VIRTUAL SCROLL ENGINE (Fixed Target) ---
+class VirtualScroller {
+  constructor(container, items, rowHeight, renderRowFn, onItemClick) {
+    this.container = container;
+    this.items = items;
+    this.rowHeight = rowHeight;
+    this.renderRowFn = renderRowFn;
+    this.onItemClick = onItemClick; // This is optional now
+
+    // FIX: Ensure we find a parent even if detached (fallback to body, but better to attach first)
+    this.scrollParent = this.container.closest(".main-content, .sidebar-content") || document.body;
+
+    this.viewport = document.createElement("div");
+    this.viewport.className = "virtual-viewport";
+    this.viewport.style.height = `${items.length * rowHeight}px`;
+    this.container.appendChild(this.viewport);
+
+    this.renderChunk = this.renderChunk.bind(this);
+    this.scrollParent.addEventListener("scroll", this.renderChunk);
+
+    // Initial Render
+    this.renderChunk();
+  }
+
+  renderChunk() {
+    const scrollTop = this.scrollParent.scrollTop;
+
+    let containerOffset = 0;
+    let el = this.container;
+    while (el && el !== this.scrollParent) {
+      containerOffset += el.offsetTop;
+      el = el.offsetParent;
+    }
+
+    const relativeScroll = Math.max(0, scrollTop - containerOffset);
+    const viewportHeight = this.scrollParent.clientHeight;
+
+    const buffer = 10;
+    let startIndex = Math.floor(relativeScroll / this.rowHeight) - buffer;
+    let endIndex = Math.floor((relativeScroll + viewportHeight) / this.rowHeight) + buffer;
+
+    startIndex = Math.max(0, startIndex);
+    endIndex = Math.min(this.items.length, endIndex);
+
+    this.viewport.innerHTML = "";
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const item = this.items[i];
+      const row = document.createElement("div");
+      row.className = "virtual-row";
+      row.style.top = `${i * this.rowHeight}px`;
+
+      // Render content (sets row.onclick inside renderRowFn)
+      this.renderRowFn(row, item);
+
+      // FIX: Only overwrite onclick if onItemClick was actually provided in constructor
+      if (this.onItemClick) {
+        row.onclick = (e) => this.onItemClick(e, item, row);
+      }
+
+      this.viewport.appendChild(row);
+    }
+  }
+
+  setItems(newItems) {
+    this.items = newItems;
+    this.viewport.style.height = `${this.items.length * this.rowHeight}px`;
+    this.renderChunk();
+  }
+
+  // NEW: Helper to scroll to a specific index
+  scrollToIndex(index) {
+    if (index < 0 || index >= this.items.length) return;
+    const itemTop = index * this.rowHeight;
+
+    // Calculate where that is in the scrollParent
+    let containerOffset = 0;
+    let el = this.container;
+    while (el && el !== this.scrollParent) {
+      containerOffset += el.offsetTop;
+      el = el.offsetParent;
+    }
+
+    // Scroll the parent
+    this.scrollParent.scrollTo({
+      top: containerOffset + itemTop - this.scrollParent.clientHeight / 2 + this.rowHeight / 2,
+      behavior: "smooth",
+    });
+  }
+
+  destroy() {
+    if (this.scrollParent) this.scrollParent.removeEventListener("scroll", this.renderChunk);
+    if (this.viewport) this.viewport.remove();
+  }
+}
+
+window.toggleDiffSelectionMode = () => {
+  const btn = document.getElementById("btn-diff-toggle");
+
+  // 1. If Diff Mode is ALREADY active, turn it OFF.
+  if (state.diffMode) {
+    state.diffMode = false;
+    state.diffBaseData = null;
+    state.diffBaseVersion = null;
+    state.diffSelecting = false;
+
+    if (btn) btn.classList.remove("active");
+    renderRegistry(state.data); // Re-render standard view
+    showToast("Diff Mode Disabled");
+    return;
+  }
+
+  // 2. If currently Selecting, cancel selection
+  if (state.diffSelecting) {
+    state.diffSelecting = false;
+    if (btn) btn.classList.remove("active");
+    return;
+  }
+
+  // 3. Enable Selection Mode
+  state.diffSelecting = true;
+  if (btn) btn.classList.add("active");
+  showToast("Select a version (or upload) to compare against");
+};
+window.handleVersionClick = async (version) => {
+  if (state.diffSelecting) {
+    // DIFF MODE: Compare Current vs Selected
+    window.setLoading(true);
+    try {
+      let baseData = await dataStore.getItem(`version_${version}`);
+      if (!baseData) {
+        const url = `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/${version}.json`;
+        const res = await fetch(url);
+        baseData = await res.json();
+        await dataStore.setItem(`version_${version}`, baseData);
+      }
+
+      activateDiff(baseData, version);
+    } catch (e) {
+      showToast("Failed to load comparison data", true);
+    }
+    window.setLoading(false);
+  } else {
+    // NORMAL MODE: Load the version
+    loadVersion(version);
+  }
+};
+
+window.handleUniversalUpload = (input) => {
+  const file = input.files[0];
+  if (!file) return;
+
+  window.setLoading(true);
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const jsonData = JSON.parse(e.target.result);
+
+      if (state.diffSelecting) {
+        // DIFF MODE: Compare Current vs Uploaded
+        activateDiff(jsonData, `Local File (${file.name})`);
+      } else {
+        // NORMAL MODE: View Uploaded
+        state.data = jsonData;
+        state.selectedVersion = `Local: ${file.name}`;
+        renderRegistry(jsonData);
+        updateBreadcrumbs();
+
+        const vBtn = document.getElementById("version-btn");
+        if (vBtn) {
+          vBtn.innerHTML =
+            `<span>${state.selectedVersion}</span>` +
+            `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`;
+        }
+        document.getElementById("version-dropdown").classList.remove("visible");
+      }
+    } catch (err) {
+      showToast("Error: Invalid JSON", true);
+      console.error(err);
+    } finally {
+      window.setLoading(false);
+    }
+  };
+  reader.readAsText(file);
+  input.value = ""; // Reset
+};
+function activateDiff(baseData, label) {
+  state.diffBaseData = baseData;
+  state.diffBaseVersion = label;
+  state.diffMode = true;
+
+  // Turn off selection mode flag, but KEEP the visual active state
+  state.diffSelecting = false;
+
+  const btn = document.getElementById("btn-diff-toggle");
+  if (btn) btn.classList.add("active");
+
+  renderRegistry(state.data);
+  document.getElementById("version-dropdown").classList.remove("visible");
+  showToast(`Comparing against ${label}`);
+}
+
+async function toggleDiffMode() {
+  if (state.diffMode) {
+    // Disable
+    state.diffMode = false;
+    state.diffBaseData = null;
+    renderRegistry(state.data);
+    showToast("Diff Mode Disabled");
+    return;
+  }
+
+  // Enable - Ask which version to compare against
+  // For simplicity in Vibe Code mode, we just grab the previous one in the list
+  const currentIdx = state.versions.indexOf(state.selectedVersion);
+  let targetVer = "latestCommit";
+
+  if (currentIdx !== -1 && currentIdx < state.versions.length - 1) {
+    targetVer = state.versions[currentIdx + 1];
+  } else if (state.versions.length > 0) {
+    targetVer = state.versions[state.versions.length - 1]; // Oldest
+  }
+
+  const confirm = window.confirm(`Compare current view against ${targetVer}?`);
+  if (!confirm) return;
+
+  window.setLoading(true);
+  try {
+    // Fetch Base Data
+    let baseData = await dataStore.getItem(`version_${targetVer}`);
+    if (!baseData) {
+      // Try fetch
+      const branch = targetVer === "latestCommit" ? CONFIG.BRANCH : CONFIG.BRANCH; // usually separate tag
+      const url =
+        targetVer === "latestCommit"
+          ? `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/latestCommit.json`
+          : `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/${targetVer}.json`;
+
+      const res = await fetch(url);
+      baseData = await res.json();
+      await dataStore.setItem(`version_${targetVer}`, baseData);
+    }
+
+    state.diffBaseData = baseData;
+    state.diffBaseVersion = targetVer;
+    state.diffMode = true;
+
+    renderRegistry(state.data);
+    showToast(`Showing changes since ${targetVer}`);
+  } catch (e) {
+    showToast("Failed to load comparison data", true);
+    console.error(e);
+  }
+  window.setLoading(false);
+}
+
+// Helper to look up a path in a dataset
+function resolveNode(root, type, path) {
+  if (!root || !root[type]) return null;
+  if (path === "") return root[type]; // Root of category
+
+  const parts = path.split(".");
+  let current = root[type];
+
+  for (const p of parts) {
+    // Handle both structure types (direct children vs .sub)
+    if (current[p]) {
+      current = current[p];
+      // If we need to go deeper and this node has a .sub, enter it
+      // But if we are just looking up this node, return it as is
+      if (current.sub) current = current.sub;
+    } else {
+      return null;
+    }
+  }
+  return current;
+}
+
+// 1. CORS FIX: Use GitHub API instead of Atom feed
+async function fetchReleases() {
+  window.setLoading(true);
+  try {
+    // Use GitHub API (JSON) - Fixes "Cross-Origin Request Blocked"
+    const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/releases`;
+    const headers = {};
+    // If token exists, use it to avoid rate limits
+    if (state.ghToken) headers["Authorization"] = `Bearer ${state.ghToken}`;
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error("API Error");
+
+    const releases = await res.json();
+    // Map API response to simple array of tag names
+    const versions = releases.map((r) => r.tag_name);
+
+    await dataStore.setItem("releases_list", versions);
+    window.setLoading(false);
+    return versions;
+  } catch (e) {
+    console.warn("Releases fetch error (using cache):", e);
+    window.setLoading(false);
+    return state.versions;
+  }
+}
+
+// The Adwaita Back Arrow SVG (Shared)
+const ADWAITA_BACK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 0 16 16" width="16px"><path d="m 9.292969 13.707031 l -5 -5 c -0.390625 -0.390625 -0.390625 -1.023437 0 -1.414062 l 5 -5 c 0.390625 -0.390625 1.023437 -0.390625 1.414062 0 s 0.390625 1.023437 0 1.414062 l -4.292969 4.292969 l 4.292969 4.292969 c 0.390625 0.390625 0.390625 1.023437 0 1.414062 s -1.023437 0.390625 -1.414062 0 z m 0 0" fill="currentColor" fill-rule="evenodd"/></svg>`;
+
+// Helper to reset animations quickly
+function resetStackClasses(el) {
+  el.classList.remove("active", "exit-left", "off-right");
+}
+
+// --- NEWS NAVIGATION CONTROLLER ---
+const newsNav = {
+  // Helper to render standard article body
+  renderArticle: (news, targetId, isLatest) => {
+    let authorsHtml = "";
+    if (news.authors && Array.isArray(news.authors)) {
+      authorsHtml = news.authors
+        .map((authorName) => {
+          const maintainerData =
+            state.data && state.data.maintainers ? state.data.maintainers[authorName] : null;
+          const onclick = maintainerData
+            ? `onclick="showMaintainerPopup('${escapeHTML(authorName)}', state.data.maintainers['${escapeHTML(authorName)}'], this)"`
+            : `style="cursor:default; opacity:0.8"`;
+
+          const avatar = `<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`;
+          return `<div class="maintainer-chip" ${onclick} style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; font-size:0.75rem; height:26px;">${avatar}${escapeHTML(authorName)}</div>`;
+        })
+        .join("");
+    }
+    const footerHtml = isLatest
+      ? `<button class="adw-action-btn secondary" onclick="newsNav.goToArchive()" style="width:240px; margin-top: 24px;">View Archive</button>`
+      : ``; // Archive entries don't need a footer button, the back button handles navigation
+
+    document.getElementById(targetId).innerHTML = `
+            <div class="news-full-header">
+                            <div style="font-weight:800; font-size:1.4rem; line-height:1.2; margin-bottom:8px;">${escapeHTML(news.title)}</div>
+                            <div class="news-meta-row" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <span style="font-family:var(--font-mono); font-size:0.8rem; color:var(--dim-label)">${escapeHTML(news.date)}</span>
+                                <span style="opacity:0.3">•</span>
+                                ${authorsHtml}
+                            </div>
+                        </div>
+                        <div class="markdown-body" style="background:transparent; border:none; padding:0; ">
+                            ${marked.parse(news.content)}
+                        </div>
+                         <div id="news-footer-actions" style="display:flex; flex-direction:column; align-items:center; gap:16px; ">${footerHtml}</div>
+                                `;
+  },
+
+  // LEVEL 0: Show Latest
+  goToLatest: () => {
+    document.getElementById("news-page-latest").classList.remove("exit-left", "off-right");
+    document.getElementById("news-page-latest").classList.add("active");
+
+    document.getElementById("news-page-archive-list").classList.remove("active", "exit-left");
+    document.getElementById("news-page-archive-list").classList.add("off-right");
+
+    // Header
+    document.getElementById("news-title").textContent = "Developer News";
+    document.getElementById("news-back-btn").style.visibility = "hidden";
+  },
+
+  // LEVEL 1: Show Archive List
+  goToArchive: () => {
+    // 1. Move Latest to Left (Exit)
+    document.getElementById("news-page-latest").classList.remove("active");
+    document.getElementById("news-page-latest").classList.add("exit-left");
+
+    // 2. Bring List to Center (Active)
+    document.getElementById("news-page-archive-list").classList.remove("off-right", "exit-left");
+    document.getElementById("news-page-archive-list").classList.add("active");
+
+    // 3. Move Entry to Right (Off) - In case we are coming back from an entry
+    document.getElementById("news-page-archive-entry").classList.remove("active", "exit-left");
+    document.getElementById("news-page-archive-entry").classList.add("off-right");
+
+    // Header
+    document.getElementById("news-title").textContent = "News Archive";
+    const btn = document.getElementById("news-back-btn");
+    btn.style.visibility = "visible";
+    btn.onclick = () => newsNav.goToLatest(); // Back goes to Latest
+
+    // Render List if empty
+    const body = document.getElementById("news-body-archive-list");
+    if (!body.hasChildNodes() || state.newsArchive.length > 0) {
+      let rows = state.newsArchive
+        .map(
+          (file) => `
+                <div class="adw-row news-archive-row" onclick="fetchNews(false, '${file.name}')">
+                    <div style="font-weight:600">${escapeHTML(file.name.replace(".json", ""))}</div>
+                    <svg width="16" height="16" style="opacity:0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+                </div>
+            `,
+        )
+        .join("");
+      body.innerHTML = `<div class="adw-group" style="margin-top:12px">${rows || '<div class="adw-row">Loading archive...</div>'}</div>`;
+    }
+  },
+
+  // LEVEL 2: Show Specific Entry
+  goToEntry: (filename) => {
+    // 1. Move List to Left (Exit)
+    document.getElementById("news-page-archive-list").classList.remove("active");
+    document.getElementById("news-page-archive-list").classList.add("exit-left");
+
+    // 2. Bring Entry to Center (Active)
+    const page = document.getElementById("news-page-archive-entry");
+    page.classList.remove("off-right", "exit-left");
+    page.classList.add("active");
+
+    // Header
+    document.getElementById("news-title").textContent = filename.replace(".json", "");
+    const btn = document.getElementById("news-back-btn");
+    btn.style.visibility = "visible";
+    btn.onclick = () => newsNav.goToArchive(); // Back goes to Archive List
+  },
+};
+
+// --- MAIN FETCH FUNCTION ---
+async function fetchNews(previewMode = false, specificFile = null) {
+  try {
+    const baseUrl = `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/news`;
+    const url = specificFile
+      ? `${baseUrl}/${specificFile}`
+      : `${baseUrl}/latest.json?nocache=${Date.now()}`;
+
+    // 1. Fetch Data
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const news = await res.json();
+
+    // 2. Handle Preview (Dashboard)
+    if (previewMode) {
+      if (!specificFile) updateNewsBadges(news.id);
+      const containers = [
+        document.getElementById("start-news-preview"),
+        document.getElementById("mobile-dash-news"),
+      ];
+      containers.forEach((c) => {
+        if (c) {
+          c.innerHTML = getNewsCardHTML(news);
+          c.style.display = "block";
+        }
+      });
+      return;
+    }
+
+    // 3. Handle Full Modal Navigation
+    state.currentNewsContent = news.content; // For AI
+
+    if (specificFile) {
+      // Render into Entry Page and Navigate Level 1 -> 2
+      newsNav.renderArticle(news, "news-body-archive-entry", false);
+      newsNav.goToEntry(specificFile);
+    } else {
+      // Render into Latest Page and Navigate (Reset to Level 0)
+      updateNewsBadges(news.id);
+      newsNav.renderArticle(news, "news-body-latest", true);
+      newsNav.goToLatest();
+
+      // Lazy load archive list in background
+      if (state.newsArchive.length === 0) {
+        const listUrl = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents?ref=news`;
+        fetch(listUrl, {
+          headers: state.ghToken ? { Authorization: `Bearer ${state.ghToken}` } : {},
+        })
+          .then((r) => r.json())
+          .then((files) => {
+            if (Array.isArray(files))
+              state.newsArchive = files
+                .filter((f) => f.name.endsWith(".json") && f.name !== "latest.json")
+                .sort((a, b) => b.name.localeCompare(a.name));
+          });
+      }
+    }
+  } catch (e) {
+    console.error("News Error:", e);
+  }
+}
+
+// Redirect old call to new system
+const renderNewsArchiveView = newsNav.goToArchive;
+
+async function summarizeNews(btn) {
+  if (!state.currentNewsContent) return;
+
+  const originalText = btn.innerHTML;
+  btn.innerHTML = `<div class="spinner" style="width:20px; height:20px; border-width:2px; margin:0"></div>Summarizing...`;
+  btn.style.pointerEvents = "none";
+  btn.style.opacity = "0.7";
+
+  const prompt = `Summarize this software release/news for a developer in 3-4 bullet points. Keep it concise.
+            
+            Content:
+            ${state.currentNewsContent}`;
+
+  try {
+    const summary = await callGeminiAPI(prompt);
+
+    // Hide button, show summary
+    btn.style.display = "none";
+    const box = document.getElementById("news-summary-box");
+    box.innerHTML = `
+                    <div style="background:var(--bg-tree); border-radius:12px; padding:16px; margin-top: 24px; border:1px solid var(--accent-bg);">
+                        <div style="display:flex; gap:8px; align-items:center; color:var(--accent-bg); font-weight:800; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px;">
+                            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 6 6.5 9.5 3 12l3.5 2.5L9 18l2.5-3.5L15 12l-3.5-2.5z"/></svg>
+                            AI Summary
+                        </div>
+                        <div class="markdown-body" style="padding:0; background:transparent; border:none; font-size:0.9rem;">
+                            ${marked.parse(summary)}
+                        </div>
+                    </div>
+                `;
+    box.style.display = "block";
+  } catch (e) {
+    btn.innerHTML = originalText;
+    btn.style.pointerEvents = "auto";
+    btn.style.opacity = "1";
+    showToast("Summary failed: " + e.message, true);
+  }
+}
+
+window.toggleAdvancedScratchpad = () => {
+  state.advancedScratchpad = !state.advancedScratchpad;
+
+  // Visual update for the switch in Settings
+  const row = document.getElementById("sp-mode-row");
+  if (row) row.classList.toggle("active", state.advancedScratchpad);
+
+  // Re-render the scratchpad immediately
+  renderScratchpad();
+  saveSettings();
+};
+const escapeHTML = (str) => {
+  if (!str) return "";
+  return str
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
+const CONFIG = { OWNER: "zenos-n", REPO: "zenpkgs", BRANCH: "json" };
+const state = {
+  supperessSheet: false,
+  diffSelecting: false,
+  diffMode: false,
+  diffBaseData: null,
+  diffBaseVersion: null,
+  currentNewsContent: "",
+  newsArchive: [],
+  advancedScratchpad: true,
+  searchMatchIndex: -1,
+  data: null,
+  versions: [],
+  selectedVersion: null,
+  theme: "dark",
+  accent: "purple",
+  reducedMotion: false,
+  transparency: 0.06,
+  ghToken: "",
+  geminiKey: "",
+  customFont: "",
+  customCSS: "",
+  focusedRow: null,
+  comboTimeout: 500,
+  currentMeta: null,
+  favorites: [],
+  recents: [],
+  searchHistory: [],
+  commandHistory: [],
+  scratchpadConfig: "",
+  favsCollapsed: false,
+  keybinds: {
+    search: "Ctrl+f",
+    up: "ArrowUp",
+    down: "ArrowDown",
+    left: "ArrowLeft",
+    right: "ArrowRight",
+    copyId: "Ctrl+c",
+    copyDesc: "Ctrl+Shift+c",
+    version: "Ctrl+,",
+    settings: "Ctrl+.",
+    about: "Ctrl+Shift+a",
+    top: "g g",
+    bottom: "Shift+g",
+    nextMatch: "Ctrl+g",
+    prevMatch: "Ctrl+Shift+g",
+  },
+};
+
+const settingsStore = localforage.createInstance({ name: "settings" });
+const dataStore = localforage.createInstance({ name: "registry_cache" });
+const aiStore = localforage.createInstance({ name: "ai_response_cache" });
+
+// --- SCRATCHPAD LOGIC ---
+
+// 1. ADD TO SCRATCHPAD (Robust Logic + Safe Formatting)
+window.addToScratchpad = (path, category, specificType = null) => {
+  // 1. Get current content
+  let current = state.scratchpadConfig || "";
+  if (!current.trim()) current = "# Generated Config\n\n";
+
+  // 2. Resolve Type Safely
+  const resolveType = (raw) => {
+    if (!raw) return { t: "unknown", e: [] };
+    if (typeof raw === "string") return { t: raw, e: [] };
+    if (typeof raw === "object") {
+      if (raw.enum) return { t: "enum", e: raw.enum };
+      if (raw.type)
+        return { t: typeof raw.type === "string" ? raw.type : "complex", e: raw.enum || [] };
+      return { t: "complex", e: [] };
+    }
+    return { t: "unknown", e: [] };
+  };
+
+  let typeInfo = { t: "unknown", e: [] };
+  if (specificType) typeInfo = resolveType(specificType);
+  else if (state.focusedRow && state.focusedRow.path === path && state.currentMeta) {
+    typeInfo = resolveType(state.currentMeta.type);
+    if (!typeInfo.e.length && state.currentMeta.enum) typeInfo.e = state.currentMeta.enum;
+  } else {
+    const parts = path.split(".");
+    let node = state.data[category];
+    for (const p of parts) {
+      if (node && (node[p] || (node.sub && node.sub[p]))) node = node[p] || node.sub[p];
+      else {
+        node = null;
+        break;
+      }
+    }
+    if (node && node.meta) {
+      typeInfo = resolveType(node.meta.type);
+      if (!typeInfo.e.length && node.meta.enum) typeInfo.e = node.meta.enum;
+    }
+  }
+
+  const nixType = String(typeInfo.t).toLowerCase();
+  const enumOptions = typeInfo.e;
+
+  // 3. Determine Token
+  let targetValue = "...";
+  if (category === "pkgs") targetValue = "__BOOL:true__";
+  else if (nixType.includes("bool")) targetValue = "__BOOL:true__";
+  else if (nixType.includes("int")) targetValue = "__NUM:0|int__";
+  else if (nixType.includes("float") || nixType.includes("number"))
+    targetValue = "__NUM:0.0|float__";
+  else if (nixType.includes("enum")) targetValue = `__ENUM:|${enumOptions.join(",")}__`;
+  else if (nixType.includes("list") || nixType.includes("array")) targetValue = "__LIST:__";
+  else if (nixType.includes("null")) targetValue = "__NULL:__";
+  else if (nixType.includes("attrs") || nixType.includes("set")) targetValue = "{ };";
+  else if (nixType.includes("function")) targetValue = "__FUNC:__";
+  else if (nixType.includes("string") || nixType.includes("str") || nixType.includes("path"))
+    targetValue = "__SB:__";
+
+  // 4. Merge Logic (Restored from your snippet)
+  const INDENT_SIZE = 2;
+
+  function findEndOfAssignment(text, startPos) {
+    let depth = 0;
+    for (let i = startPos; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") depth--;
+      if (depth === 0 && text[i] === ";") return i;
+    }
+    return -1;
+  }
+
+  function findKeyInImmediateScope(key, text) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const keyRegex = new RegExp(`(^|[\\s\\{\\n;\\.])(${escapedKey})(\\s*[\\.=;]|\\s|$)`, "g");
+    let match;
+    while ((match = keyRegex.exec(text)) !== null) {
+      let depth = 0;
+      for (let i = 0; i < match.index; i++) {
+        if (text[i] === "{") depth++;
+        else if (text[i] === "}") depth--;
+      }
+      if (depth === 0) {
+        const k = match[2];
+        return { key: k, index: match.index + match[0].indexOf(k), length: k.length };
+      }
+    }
+    return null;
+  }
+
+  function countImmediateAssignments(text) {
+    let depth = 0,
+      count = 0,
+      inAssign = false;
+    for (let char of text) {
+      if (char === "{") depth++;
+      else if (char === "}") depth--;
+      else if (depth === 0) {
+        if (/[a-zA-Z0-9_<>\.-]/.test(char) && !inAssign) {
+          count++;
+          inAssign = true;
+        } else if (char === ";") inAssign = false;
+      }
+    }
+    return count;
+  }
+
+  function formatNix(text) {
+    // 1. Mask Tokens (Prevent breaking badges)
+    const tokens = [];
+    const masked = text.replace(
+      /__(BOOL|NUM|ENUM|LIST|NULL|SB|FUNC):(.*?)(?:\|(.*))?__/g,
+      (match) => {
+        tokens.push(match);
+        return `@@TOKEN_${tokens.length - 1}@@`;
+      },
+    );
+
+    let depth = 0;
+    // Basic cleanup
+    const cleaned = masked
+      .replace(/;\s*;/g, ";")
+      .replace(/\{\s*;/g, "{")
+      .replace(/;\s*\}/g, ";}");
+
+    // Rule 2: Only add newline if { is followed by space
+    const structured = cleaned.replace(/\{\s/g, "{\n").replace(/\}/g, "\n}").replace(/;/g, ";\n");
+
+    const lines = structured
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && l !== ";");
+
+    let result = lines
+      .map((line) => {
+        if (line.startsWith("}") || line.startsWith("};")) depth--;
+        const out = " ".repeat(depth * INDENT_SIZE) + line;
+        if (line.endsWith("{")) depth++;
+        return out;
+      })
+      .join("\n");
+
+    // Unmask
+    result = result.replace(/@@TOKEN_(\d+)@@/g, (_, idx) => tokens[idx]);
+    return result;
+  }
+
+  function mergePath(pathParts, rest, value = "...") {
+    if (pathParts.length === 0) return rest;
+    const key = pathParts[0],
+      remaining = pathParts.slice(1);
+    const match = findKeyInImmediateScope(key, rest);
+    if (!match) return rest + (rest.trim() ? "\n" : "") + pathParts.join(".") + ` = ${value};`;
+    const kEnd = match.index + match.length;
+    const remRest = rest.substring(kEnd);
+    const dotMatch = remRest.match(/^\s*\.([a-zA-Z0-9_<>-]+)/);
+    if (dotMatch) {
+      const sIdx = findEndOfAssignment(rest, kEnd);
+      const aEnd = sIdx === -1 ? rest.length : sIdx + 1;
+      const dotPos = kEnd + remRest.indexOf(".");
+      if (dotMatch[1] !== remaining[0]) {
+        const existingVal = rest.substring(dotPos + 1, sIdx).trim();
+        return (
+          rest.substring(0, match.index) +
+          `${key} = { ${existingVal}; ${remaining.join(".")} = ${value}; };` +
+          rest.substring(aEnd)
+        );
+      }
+      return (
+        rest.substring(0, dotPos + 1) +
+        mergePath(remaining, rest.substring(dotPos + 1, aEnd).trim(), value) +
+        rest.substring(aEnd)
+      );
+    }
+    const blockMatch = remRest.match(/^\s*=\s*\{/);
+    if (blockMatch) {
+      const oIdx = kEnd + remRest.indexOf("{");
+      let cIdx = -1,
+        d = 0;
+      for (let i = oIdx; i < rest.length; i++) {
+        if (rest[i] === "{") d++;
+        else if (rest[i] === "}") d--;
+        if (d === 0) {
+          cIdx = i;
+          break;
+        }
+      }
+      if (cIdx !== -1) {
+        const inner = rest.substring(oIdx + 1, cIdx);
+        const updated = mergePath(remaining, inner, value);
+        if (countImmediateAssignments(updated) === 1) {
+          return (
+            rest.substring(0, match.index) + `${key}.${updated.trim()}` + rest.substring(cIdx + 1)
+          );
+        }
+        return rest.substring(0, oIdx + 1) + updated + rest.substring(cIdx);
+      }
+    }
+    const semiMatch = remRest.match(/^\s*(=[^;]*)?;/);
+    if (semiMatch) {
+      if (remaining.length === 0) return rest;
+      const sIdx = findEndOfAssignment(rest, kEnd);
+      return (
+        rest.substring(0, match.index) +
+        `${key}.${remaining.join(".")} = ${value};` +
+        rest.substring(sIdx + 1)
+      );
+    }
+    return rest;
+  }
+
+  // 5. Execute
+  const fullPathParts = (category === "pkgs" ? `system.packages.${path}` : path).split(".");
+  try {
+    const merged = mergePath(fullPathParts, current, targetValue);
+    const finalized = formatNix(merged);
+
+    if (finalized.trim() === current.trim()) {
+      showToast("Already in Config");
+    } else {
+      state.scratchpadConfig = finalized;
+      renderScratchpad();
+      if (typeof saveSettings === "function") saveSettings();
+
+      const panel = document.getElementById("scratchpad-panel");
+      if (panel && !panel.classList.contains("visible")) panel.classList.add("visible");
+
+      showToast("Added to Scratchpad");
+    }
+  } catch (e) {
+    console.error(e);
+    showToast("Merge Error", true);
+  }
+};
+
+// Fix Array Deletion (Stop propagation)
+window.removeListItem = (idx, event) => {
+  if (event) event.stopPropagation(); // Stop popup from closing
+  activeListItems.splice(idx, 1);
+  renderListPopupItems();
+  document.getElementById("sp-badge-input").focus();
+};
+
+function renderListPopupItems() {
+  const c = document.getElementById("sp-list-container");
+  c.innerHTML = "";
+  activeListItems.forEach((item, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "sp-popup-chip";
+    // Pass event to removeListItem
+    chip.innerHTML = `<span>${escapeHTML(item)}</span> <span class="del-btn" onclick="removeListItem(${idx}, event)">×</span>`;
+    c.appendChild(chip);
+  });
+  c.scrollTop = c.scrollHeight;
+}
+
+// 5. EXPORT (Correct Newline Unescaping)
+window.copyScratchpadConfig = () => {
+  let content = state.scratchpadConfig;
+  content = content
+    .replace(/__BOOL:(true|false)__/g, "$1")
+    .replace(/__NUM:(\d+)__/g, "$1")
+    .replace(/__ENUM:(.*?)\|.*?__/g, '"$1"')
+    .replace(/__SB:(.*?)__/g, (m, val) => `"${val.replace(/\\n/g, "\n")}"`) // Unescape
+    .replace(/__FUNC:(.*?)__/g, (m, val) => val.replace(/\\n/g, "\n")) // Unescape
+    .replace(/__NULL:__/g, "null")
+    .replace(/__LIST:(.*?)__/g, (m, items) => {
+      if (!items) return "[ ]";
+      const quoted = items
+        .split(",")
+        .map((i) => `"${i.replace(/\\n/g, "\n")}"`)
+        .join(" ");
+      return `[ ${quoted} ]`;
+    });
+  window.copyToClipboard(content);
+};
+// 2. RENDERER
+// 1. FIXED SERIALIZER: Handles multiple badges per line individually
+window.getScratchpadContent = () => {
+  const el = document.getElementById("sp-visual-view");
+  let text = "";
+
+  // Helper to generate token string from a specific badge node
+  const getTokenFromNode = (node) => {
+    if (node.classList.contains("sp-bool-wrapper")) {
+      const isOn = node.classList.contains("active");
+      return `__BOOL:${isOn}__`;
+    }
+    if (node.classList.contains("sp-type-badge")) {
+      if (node.classList.contains("enum")) {
+        return `__ENUM:${node.innerText}|${node.dataset.opts}__`;
+      }
+      if (node.classList.contains("null")) {
+        return `__NULL:__`;
+      }
+      if (node.classList.contains("string")) {
+        const val = node.dataset.val || "";
+        const subtype = node.dataset.subtype || "";
+        const type = node.dataset.type || "";
+
+        // Escape newlines to ensure one-line tokens
+        const safeVal = val.replace(/\n/g, "\\n");
+
+        if (type === "func") return `__FUNC:${safeVal}__`;
+        if (type === "list") return `__LIST:${safeVal}__`;
+        if (subtype) return `__NUM:${safeVal}|${subtype}__`;
+        return `__SB:${safeVal}__`;
+      }
+    }
+    return "";
+  };
+
+  // Iterate through lines (divs)
+  el.childNodes.forEach((lineNode, i) => {
+    if (lineNode.nodeType === Node.ELEMENT_NODE && lineNode.tagName === "DIV") {
+      // Iterate through the line's contents (text + badges)
+      lineNode.childNodes.forEach((child) => {
+        if (child.nodeType === Node.TEXT_NODE) {
+          text += child.textContent;
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          // If it's a syntax span (blue keys, yellow equals), keep text
+          if (
+            child.classList.contains("sp-token-key") ||
+            child.classList.contains("sp-token-key-final") ||
+            child.classList.contains("sp-token-dot") ||
+            child.classList.contains("sp-token-eq") ||
+            child.classList.contains("sp-token-semi") ||
+            child.classList.contains("sp-token-comment")
+          ) {
+            text += child.textContent;
+          }
+          // If it's a widget, convert to token
+          else {
+            text += getTokenFromNode(child);
+          }
+        }
+      });
+      if (i < el.childNodes.length - 1) text += "\n";
+    } else if (lineNode.nodeType === Node.TEXT_NODE) {
+      text += lineNode.textContent;
+    } else if (lineNode.tagName === "BR") {
+      text += "\n";
+    }
+  });
+
+  return text;
+};
+
+// 2. FIXED RENDERER: Supports multiple tokens per line + Syntax Highlighting
+window.renderScratchpad = () => {
+  const el = document.getElementById("sp-visual-view");
+  const text = state.scratchpadConfig || "";
+
+  if (!text.trim()) {
+    el.innerHTML = `<span class="sp-token-comment"># Your generated config will appear here...</span>`;
+    return;
+  }
+
+  const escapeHTML = (str) =>
+    str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const preserveIndent = (str) =>
+    escapeHTML(str).replace(/^(\s+)/, (match) => "&nbsp;".repeat(match.length));
+
+  // Common Regex for key-value pairs
+  const assignmentRegex = /^(\s*)([a-zA-Z0-9_.\-<>$\{}]+|"[^"]+")(\s*=\s*)(.*)/;
+
+  // --- RAW MODE (Clean Nix Syntax) ---
+  if (!state.advancedScratchpad) {
+    // Helper to strip tokens into readable values
+    const detokenize = (str) => {
+      return str
+        .replace(/__BOOL:(true|false)__/g, "$1") // true
+        .replace(/__NUM:([0-9.-]+)(?:\|.*?)?__/g, "$1") // 123
+        .replace(/__ENUM:(.*?)\|.*?__/g, '"$1"') // "option"
+        .replace(/__SB:(.*?)__/g, (m, val) => `"${val.replace(/\\n/g, "\n")}"`) // "string"
+        .replace(/__LIST:(.*?)__/g, (m, val) => {
+          if (!val) return "[ ]";
+          const items = val
+            .split(",")
+            .map((s) => `"${s}"`)
+            .join(" ");
+          return `[ ${items} ]`;
+        }) // [ "a" "b" ]
+        .replace(/__NULL:__/g, "null") // null
+        .replace(/__FUNC:(.*?)__/g, "$1"); // raw lambda
+    };
+
+    const lines = text.split("\n");
+    let html = "";
+    lines.forEach((line) => {
+      if (line.trim().startsWith("#")) {
+        html += `<div class="sp-line"><span class="sp-token-comment">${preserveIndent(line)}</span></div>`;
+        return;
+      }
+
+      const assignMatch = line.match(assignmentRegex);
+      if (assignMatch) {
+        const [_, indentRaw, path, eqGroup, rest] = assignMatch;
+        const indent = indentRaw.replace(/ /g, "&nbsp;");
+
+        // Highlight Key
+        let pathHtml;
+        if (path.startsWith('"'))
+          pathHtml = `<span class="sp-token-key-final">${escapeHTML(path)}</span>`;
+        else {
+          const parts = path.split(".");
+          pathHtml = parts
+            .map((part, i) => {
+              if (i === parts.length - 1)
+                return `<span class="sp-token-key-final">${escapeHTML(part)}</span>`;
+              return `<span class="sp-token-key">${escapeHTML(part)}</span><span class="sp-token-dot">.</span>`;
+            })
+            .join("");
+        }
+
+        // Render Value (Cleaned)
+        const cleanValue = detokenize(rest);
+        const eqParts = eqGroup.split("=");
+        html += `<div class="sp-line">${indent}${pathHtml}${escapeHTML(eqParts[0])}<span class="sp-token-eq">=</span>${escapeHTML(cleanValue)}</div>`;
+      } else {
+        // Just clean the line
+        const indentMatch = line.match(/^(\s*)/);
+        const indent = indentMatch ? indentMatch[1].replace(/ /g, "&nbsp;") : "";
+        const content = line.substring(indentMatch ? indentMatch[1].length : 0);
+        html += `<div class="sp-line">${indent}${escapeHTML(detokenize(content))}</div>`;
+      }
+    });
+    el.innerHTML = html;
+    return;
+  }
+
+  // --- ADVANCED MODE (Badges) ---
+  const globalTokenRegex = /__(BOOL|NUM|ENUM|LIST|NULL|SB|FUNC):(.*?)(?:\|(.*?))?__/g;
+
+  const renderWidget = (type, val1, val2) => {
+    const cef = 'contenteditable="false"';
+    const decodedVal = val1.replace(/\\n/g, "\n");
+
+    if (type === "BOOL") {
+      const isOn = val1 === "true";
+      return `<div class="sp-bool-wrapper ${isOn ? "active" : ""}" ${cef} onclick="toggleBool(this)"><div class="switch-toggle"></div></div>`;
+    } else if (type === "NUM") {
+      return `<span class="sp-type-badge string" data-val="${escapeHTML(val1)}" data-subtype="${escapeHTML(val2)}" onclick="openBadgePopup(this)"># ${val1}</span>`;
+    } else if (type === "ENUM") {
+      const current = decodedVal || "Select...";
+      return `<span class="sp-type-badge enum" ${cef} data-opts="${val2 || ""}" onclick="openEnumPopup(this)">${escapeHTML(current)}</span>`;
+    } else if (type === "NULL") {
+      return `<span class="sp-type-badge null" ${cef} onclick="showToast('Null is a placeholder')">null</span>`;
+    } else if (type === "LIST") {
+      const count = val1 ? val1.split(",").length : 0;
+      return `<span class="sp-type-badge string" ${cef} data-val="${escapeHTML(val1)}" data-type="list" onclick="openBadgePopup(this)">[ List (${count}) ]</span>`;
+    } else if (type === "FUNC") {
+      return `<span class="sp-type-badge string" ${cef} data-val="${escapeHTML(decodedVal)}" data-type="func" onclick="openBadgePopup(this)">λ ${decodedVal ? "Function" : "Edit..."}</span>`;
+    } else if (type === "SB") {
+      const filled = val1 ? "filled" : "";
+      let disp = decodedVal;
+      if (disp.length > 20) disp = disp.substring(0, 20) + "...";
+      if (decodedVal.includes("\n")) disp = "multiline...";
+      return `<span class="sp-type-badge string ${filled}" ${cef} data-val="${escapeHTML(decodedVal)}" onclick="openBadgePopup(this)">${decodedVal ? escapeHTML(disp) : "String..."}</span>`;
+    }
+    return "";
+  };
+
+  const processValueString = (str) => {
+    let result = "";
+    let lastIndex = 0;
+    let match;
+    while ((match = globalTokenRegex.exec(str)) !== null) {
+      result += escapeHTML(str.substring(lastIndex, match.index));
+      const [full, type, content, args] = match;
+      result += renderWidget(type, content, args);
+      lastIndex = match.index + full.length;
+    }
+    result += escapeHTML(str.substring(lastIndex));
+    if (result.endsWith(";")) result = result.slice(0, -1) + `<span class="sp-token-semi">;</span>`;
+    return result;
+  };
+
+  const lines = text.split("\n");
+  let html = "";
+
+  lines.forEach((line) => {
+    if (line.trim().startsWith("#")) {
+      html += `<div class="sp-line"><span class="sp-token-comment">${preserveIndent(line)}</span></div>`;
+      return;
+    }
+    const assignMatch = line.match(assignmentRegex);
+    if (assignMatch) {
+      const [_, indentRaw, path, eqGroup, rest] = assignMatch;
+      const indent = indentRaw.replace(/ /g, "&nbsp;");
+      let pathHtml;
+      if (path.startsWith('"'))
+        pathHtml = `<span class="sp-token-key-final">${escapeHTML(path)}</span>`;
+      else {
+        const parts = path.split(".");
+        pathHtml = parts
+          .map((part, i) => {
+            if (i === parts.length - 1)
+              return `<span class="sp-token-key-final">${escapeHTML(part)}</span>`;
+            return `<span class="sp-token-key">${escapeHTML(part)}</span><span class="sp-token-dot">.</span>`;
+          })
+          .join("");
+      }
+      const eqParts = eqGroup.split("=");
+      const valueHtml = processValueString(rest);
+      html += `<div class="sp-line">${indent}${pathHtml}${escapeHTML(eqParts[0])}<span class="sp-token-eq">=</span>${escapeHTML(eqParts[1])}${valueHtml}</div>`;
+    } else {
+      const indentMatch = line.match(/^(\s*)/);
+      const indent = indentMatch ? indentMatch[1].replace(/ /g, "&nbsp;") : "";
+      const content = line.substring(indentMatch ? indentMatch[1].length : 0);
+      html += `<div class="sp-line">${indent}${processValueString(content)}</div>`;
+    }
+  });
+
+  el.innerHTML = html;
+};
+
+window.updateState = () => {
+  state.scratchpadConfig = window.getScratchpadContent();
+  saveSettings();
+};
+
+// 4. INTERACTION HANDLERS
+window.toggleBool = (el) => {
+  el.classList.toggle("active");
+  window.updateState();
+};
+
+// Note: Inline number/list logic removed in favor of badges
+
+// --- POPUP INTERACTION LOGIC ---
+let activeBadgeEl = null;
+let activeListItems = []; // Temp storage for list builder
+
+window.openBadgePopup = (el) => {
+  const pop = document.getElementById("sp-input-popover");
+  const input = document.getElementById("sp-badge-input");
+  const textarea = document.getElementById("sp-badge-textarea");
+  const listContainer = document.getElementById("sp-list-container");
+  const btnMinus = document.getElementById("sp-btn-minus");
+  const btnPlus = document.getElementById("sp-btn-plus");
+  const title = document.getElementById("sp-pop-title");
+
+  activeBadgeEl = el;
+
+  // Reset UI
+  input.style.display = "block";
+  textarea.style.display = "none";
+  listContainer.style.display = "none";
+  btnMinus.style.display = "none";
+  btnPlus.style.display = "none";
+  input.value = "";
+  input.oninput = null;
+  input.onkeydown = null;
+
+  const val = el.dataset.val || "";
+  const subtype = el.dataset.subtype;
+  const isList = el.dataset.type === "list";
+  const isFunc = el.innerText.includes("λ");
+
+  // --- UI Setup Logic (Same as before) ---
+  if (subtype === "int") {
+    title.textContent = "Edit Integer";
+    input.value = val;
+    input.placeholder = "0";
+    btnMinus.style.display = "flex";
+    btnPlus.style.display = "flex";
+    input.oninput = (e) => {
+      e.target.value = e.target.value.replace(/[^0-9-]/g, "");
+    };
+    btnMinus.onclick = () => {
+      input.value = parseInt(input.value || 0) - 1;
+      input.focus();
+    };
+    btnPlus.onclick = () => {
+      input.value = parseInt(input.value || 0) + 1;
+      input.focus();
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") window.saveBadgeValue();
+      if (e.key === "Escape") window.closeBadgePopup();
+    };
+  } else if (subtype === "float") {
+    title.textContent = "Edit Float";
+    input.value = val;
+    input.placeholder = "0.0";
+    btnMinus.style.display = "flex";
+    btnPlus.style.display = "flex";
+    input.oninput = (e) => {
+      e.target.value = e.target.value.replace(/[^0-9.,-]/g, "");
+      if ((e.target.value.match(/[.,]/g) || []).length > 1) {
+        e.target.value = e.target.value.substring(0, e.target.value.length - 1);
+      }
+    };
+    btnMinus.onclick = () => {
+      input.value = (parseFloat(input.value || 0) - 1).toFixed(1);
+      input.focus();
+    };
+    btnPlus.onclick = () => {
+      input.value = (parseFloat(input.value || 0) + 1).toFixed(1);
+      input.focus();
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") window.saveBadgeValue();
+      if (e.key === "Escape") window.closeBadgePopup();
+    };
+  } else if (isList) {
+    title.textContent = "Edit List";
+    listContainer.style.display = "flex";
+    btnPlus.style.display = "flex";
+    input.placeholder = "Type & Enter to add...";
+    activeListItems = val ? val.split(",").filter((x) => x) : [];
+    renderListPopupItems();
+    const addEntry = () => {
+      const txt = input.value.trim();
+      if (txt) {
+        activeListItems.push(txt);
+        renderListPopupItems();
+        input.value = "";
+        input.focus();
+      }
+    };
+    btnPlus.onclick = addEntry;
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addEntry();
+      }
+      if (e.key === "Escape") window.closeBadgePopup();
+    };
+  } else if (isFunc) {
+    title.textContent = "Edit Function";
+    input.style.display = "none";
+    textarea.style.display = "block";
+    textarea.value = val;
+    textarea.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) window.saveBadgeValue();
+      if (e.key === "Escape") window.closeBadgePopup();
+    };
+  } else {
+    title.textContent = "Edit Value";
+    input.value = val;
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") window.saveBadgeValue();
+      if (e.key === "Escape") window.closeBadgePopup();
+    };
+  }
+
+  // --- SMART POSITIONING ---
+  // 1. Temporarily show to measure dimensions
+  pop.style.visibility = "hidden";
+  pop.style.display = "flex";
+  pop.classList.add("visible");
+
+  const badgeRect = el.getBoundingClientRect();
+  const panel = document.getElementById("scratchpad-panel");
+  const panelRect = panel.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+
+  // Default: Below the badge
+  let top = badgeRect.bottom - panelRect.top + 8;
+  // Center horizontally relative to badge
+  let left = badgeRect.left - panelRect.left + badgeRect.width / 2 - popRect.width / 2;
+
+  // Constraint: Keep within panel width
+  if (left < 12) left = 12;
+  if (left + popRect.width > panelRect.width - 12) left = panelRect.width - popRect.width - 12;
+
+  // Check if it fits vertically (Panel Bottom)
+  // If (Badge Bottom + Pop Height + Padding) > Panel Height => Flip Up
+  const bottomOverflow = top + popRect.height > panelRect.height - 12;
+
+  if (bottomOverflow) {
+    // Position Above: Badge Top - Pop Height - Padding
+    top = badgeRect.top - panelRect.top - popRect.height - 8;
+    pop.classList.add("flipped"); // Add class for arrow styling
+  } else {
+    pop.classList.remove("flipped");
+  }
+
+  // Apply Coordinates
+  pop.style.top = top + "px";
+  pop.style.left = left + "px";
+
+  // Calculate Arrow Position
+  const arrowPos = badgeRect.left - panelRect.left + badgeRect.width / 2 - left - 6;
+  pop.style.setProperty("--arrow-left", `${arrowPos}px`);
+
+  // Reveal
+  pop.style.visibility = "visible";
+
+  if (!isFunc) {
+    input.focus();
+    if (!isList) input.select();
+  } else textarea.focus();
+};
+
+window.removeListItem = (idx, event) => {
+  if (event) event.stopPropagation(); // Stop bubbling to document
+  activeListItems.splice(idx, 1);
+  renderListPopupItems();
+  document.getElementById("sp-badge-input").focus();
+};
+
+function renderListPopupItems() {
+  const c = document.getElementById("sp-list-container");
+  c.innerHTML = "";
+  activeListItems.forEach((item, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "sp-popup-chip";
+    // Pass event to removeListItem
+    chip.innerHTML = `<span>${escapeHTML(item)}</span> <span class="del-btn" onclick="removeListItem(${idx}, event)">×</span>`;
+    c.appendChild(chip);
+  });
+  c.scrollTop = c.scrollHeight;
+}
+
+// 5. EXPORT (Correct Newline Unescaping)
+window.copyScratchpadConfig = () => {
+  let content = state.scratchpadConfig;
+  content = content
+    .replace(/__BOOL:(true|false)__/g, "$1")
+    .replace(/__NUM:(\d+(?:\.\d+)?)\|(float|int)__/g, "$1")
+    .replace(/__ENUM:(.*?)\|.*?__/g, '"$1"')
+    .replace(/__SB:(.*?)__/g, (m, val) => `"${val.replace(/\\n/g, "\n")}"`) // Unescape
+    .replace(/__FUNC:(.*?)__/g, (m, val) => val.replace(/\\n/g, "\n")) // Unescape
+    .replace(/__NULL:__/g, "null")
+    .replace(/__LIST:(.*?)__/g, (m, items) => {
+      if (!items) return "[ ]";
+      const quoted = items
+        .split(",")
+        .map((i) => `"${i.replace(/\\n/g, "\n")}"`)
+        .join(" ");
+      return `[ ${quoted} ]`;
+    });
+  window.copyToClipboard(content);
+};
+
+window.saveBadgeValue = () => {
+  if (!activeBadgeEl) return;
+  const input = document.getElementById("sp-badge-input");
+  const textarea = document.getElementById("sp-badge-textarea");
+
+  // Check TYPE from dataset, not innerText (fixes "Function turns into SB" bug)
+  const isList = activeBadgeEl.dataset.type === "list";
+  const isFunc = activeBadgeEl.dataset.type === "func";
+  const subtype = activeBadgeEl.dataset.subtype;
+
+  let val;
+
+  if (subtype === "int") {
+    val = input.value;
+    if (!Number.isInteger(Number(val)) && val !== "") val = Math.round(Number(val));
+  } else if (isList) {
+    val = activeListItems.join(",");
+  } else if (isFunc) {
+    val = textarea.value;
+  } else {
+    val = input.value;
+  }
+
+  activeBadgeEl.dataset.val = val;
+
+  // Visual Update
+  if (subtype) {
+    activeBadgeEl.textContent = `# ${val}`;
+  } else if (isList) {
+    activeBadgeEl.textContent = `[ List (${activeListItems.length}) ]`;
+  } else if (isFunc) {
+    // Restore lambda prefix visually
+    activeBadgeEl.textContent = `λ ${val ? "Function" : "Edit..."}`;
+  } else {
+    activeBadgeEl.textContent = val || "Set Value...";
+  }
+
+  if (val) activeBadgeEl.classList.add("filled");
+  else activeBadgeEl.classList.remove("filled");
+
+  window.updateState();
+  renderScratchpad();
+  window.closeBadgePopup();
+};
+
+// 3. SERIALIZER
+// 3. SERIALIZER (Hardened)
+window.getScratchpadContent = () => {
+  const el = document.getElementById("sp-visual-view");
+  let text = "";
+
+  const replaceTokenValue = (container, newToken) => {
+    // CRITICAL: Escape newlines so regex doesn't break on reload
+    const escapedToken = newToken.replace(/\n/g, "\\n");
+    let line = "";
+    container.childNodes.forEach((node) => {
+      // Capture text nodes and known syntax spans
+      if (
+        node.nodeType === Node.TEXT_NODE ||
+        (node.classList &&
+          (node.classList.contains("sp-token-key") ||
+            node.classList.contains("sp-token-eq") ||
+            node.classList.contains("sp-token-semi") ||
+            node.classList.contains("sp-token-dot") ||
+            node.classList.contains("sp-token-key-final")))
+      ) {
+        line += node.textContent;
+      }
+      // Inject the token string for widgets
+      else if (
+        node.classList &&
+        (node.classList.contains("sp-bool-wrapper") || node.classList.contains("sp-type-badge"))
+      ) {
+        line += escapedToken;
+      }
+    });
+    return line;
+  };
+
+  // Helper to process a single line (div)
+  const processLine = (div) => {
+    if (div.querySelector(".sp-bool-wrapper")) {
+      const isOn = div.querySelector(".sp-bool-wrapper").classList.contains("active");
+      return replaceTokenValue(div, `__BOOL:${isOn}__`);
+    } else if (div.querySelector(".sp-type-badge.enum")) {
+      const badge = div.querySelector(".sp-type-badge.enum");
+      return replaceTokenValue(div, `__ENUM:${badge.innerText}|${badge.dataset.opts}__`);
+    } else if (div.querySelector(".sp-type-badge.null")) {
+      return replaceTokenValue(div, `__NULL:__`);
+    } else if (div.querySelector(".sp-type-badge.string")) {
+      const badge = div.querySelector(".sp-type-badge.string");
+      const val = badge.dataset.val || "";
+      const subtype = badge.dataset.subtype || "";
+
+      if (badge.dataset.type === "func") return replaceTokenValue(div, `__FUNC:${val}__`);
+      else if (subtype) return replaceTokenValue(div, `__NUM:${val}|${subtype}__`);
+      else if (badge.dataset.type === "list") return replaceTokenValue(div, `__LIST:${val}__`);
+      else return replaceTokenValue(div, `__SB:${val}__`);
+    } else {
+      return div.textContent;
+    }
+  };
+
+  // Main loop: Handle both Divs (lines) and orphaned text/breaks
+  el.childNodes.forEach((node, i) => {
+    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "DIV") {
+      text += processLine(node);
+      // Add newline if it's not the very last element
+      if (i < el.childNodes.length - 1) text += "\n";
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent;
+    } else if (node.tagName === "BR") {
+      text += "\n";
+    }
+  });
+
+  return text;
+};
+window.closeBadgePopup = () => {
+  document.getElementById("sp-input-popover").classList.remove("visible");
+  activeBadgeEl = null;
+};
+
+window.openEnumPopup = (el) => {
+  const pop = document.getElementById("sp-enum-popover");
+  const list = document.getElementById("sp-enum-list");
+  activeBadgeEl = el;
+
+  const opts = (el.dataset.opts || "").split(",");
+  list.innerHTML = opts
+    .map((o) => `<div class="enum-option" onclick="selectEnum('${o}')">${o}</div>`)
+    .join("");
+
+  // --- SMART POSITIONING ---
+  // 1. Measure
+  pop.style.visibility = "hidden";
+  pop.style.display = "flex";
+  pop.classList.add("visible");
+
+  const rect = el.getBoundingClientRect();
+  const panel = document.getElementById("scratchpad-panel");
+  const panelRect = panel.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+
+  let top = rect.bottom - panelRect.top + 8;
+  let left = rect.left - panelRect.left + rect.width / 2 - popRect.width / 2;
+
+  // Horizontal Constraints
+  if (left < 12) left = 12;
+  if (left + popRect.width > panelRect.width - 12) left = panelRect.width - popRect.width - 12;
+
+  // Vertical Check
+  const bottomOverflow = top + popRect.height > panelRect.height - 12;
+
+  if (bottomOverflow) {
+    top = rect.top - panelRect.top - popRect.height - 8;
+    pop.classList.add("flipped");
+  } else {
+    pop.classList.remove("flipped");
+  }
+
+  pop.style.top = top + "px";
+  pop.style.left = left + "px";
+
+  const arrowLeft = rect.left - panelRect.left + rect.width / 2 - left - 6;
+  pop.style.setProperty("--arrow-left", `${arrowLeft}px`);
+
+  // Reveal
+  pop.style.visibility = "visible";
+};
+
+window.selectEnum = (val) => {
+  if (activeBadgeEl) {
+    activeBadgeEl.innerText = val;
+    window.updateState();
+  }
+  document.getElementById("sp-enum-popover").classList.remove("visible");
+};
+
+// --- LIVE FORMATTING LOGIC ---
+
+// 1. Cursor Management Helpers
+function getCursorPos(editor) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+
+  // Find which line (div) the cursor is in
+  let node = range.startContainer;
+  while (node && node !== editor && (!node.classList || !node.classList.contains("sp-line"))) {
+    node = node.parentNode;
+  }
+  if (!node || node === editor) return null;
+
+  // Get line index
+  const lineIndex = Array.from(editor.children).indexOf(node);
+
+  // Calculate offset within that line's text content
+  const preCaretRange = range.cloneRange();
+  preCaretRange.selectNodeContents(node);
+  preCaretRange.setEnd(range.startContainer, range.startOffset);
+  const offset = preCaretRange.toString().length;
+
+  return { line: lineIndex, offset: offset };
+}
+
+function restoreCursorPos(editor, savedPos) {
+  if (!savedPos) return;
+  const lines = Array.from(editor.children);
+  if (savedPos.line >= lines.length) return; // Line might have been deleted
+
+  const lineNode = lines[savedPos.line];
+
+  // Walk text nodes to find the offset
+  const walker = document.createTreeWalker(lineNode, NodeFilter.SHOW_TEXT, null, false);
+  let currentLen = 0;
+  let node;
+  let found = false;
+
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (currentLen + len >= savedPos.offset) {
+      const range = document.createRange();
+      try {
+        range.setStart(node, savedPos.offset - currentLen);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        found = true;
+      } catch (e) {
+        console.warn("Cursor restore error", e);
+      }
+      break;
+    }
+    currentLen += len;
+  }
+
+  // Fallback: If text shrank (e.g. "true" -> [Switch]), put cursor at end of line
+  if (!found) {
+    const range = document.createRange();
+    range.selectNodeContents(lineNode);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+}
+
+// 2. The Smart Input Handler
+let renderTimeout;
+const editorEl = document.getElementById("sp-visual-view");
+
+editorEl.addEventListener("input", (e) => {
+  // 1. Always save state immediately (raw text tokens)
+  state.scratchpadConfig = window.getScratchpadContent();
+
+  // 2. Check for Immediate Triggers (Enter, Semicolon, Closing Brace)
+  // (InputType check helps avoid firing on backspace/deletes which feels jumpy)
+  const isTrigger = e.data === ";" || e.data === "}" || e.inputType === "insertParagraph";
+
+  if (renderTimeout) clearTimeout(renderTimeout);
+
+  if (isTrigger) {
+    // Immediate Render for structural changes
+    const saved = getCursorPos(editorEl);
+    renderScratchpad();
+    restoreCursorPos(editorEl, saved);
+    saveSettings();
+  } else {
+    // Debounced Render for regular typing (600ms delay)
+    renderTimeout = setTimeout(() => {
+      const saved = getCursorPos(editorEl);
+      renderScratchpad();
+      restoreCursorPos(editorEl, saved);
+      saveSettings();
+    }, 600);
+  }
+});
+// 3. ENHANCED DELETION LOGIC
+editorEl.addEventListener("keydown", (e) => {
+  if (e.key === "Backspace") {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+
+    if (range.collapsed) {
+      let currentNode = range.startContainer;
+      let currentOffset = range.startOffset;
+
+      // 1. Normalize: If we are in an Element node, get the actual child node
+      if (currentNode.nodeType === Node.ELEMENT_NODE) {
+        if (currentOffset > 0) {
+          currentNode = currentNode.childNodes[currentOffset - 1];
+          // If it's a text node, go to the end of it
+          if (currentNode.nodeType === Node.TEXT_NODE) {
+            currentOffset = currentNode.textContent.length;
+          } else {
+            // It's an element (like a badge)
+            if (
+              currentNode.classList &&
+              (currentNode.classList.contains("sp-type-badge") ||
+                currentNode.classList.contains("sp-bool-wrapper"))
+            ) {
+              e.preventDefault();
+              currentNode.remove();
+              state.scratchpadConfig = window.getScratchpadContent();
+              renderScratchpad(); // Re-render to clean up structure
+              return;
+            }
+            return; // Browser handles other cases
+          }
+        }
+      }
+
+      // 2. We are at the start of a text node
+      if (currentNode.nodeType === Node.TEXT_NODE && currentOffset === 0) {
+        // Look for the previous sibling (element or text)
+        let prev = currentNode.previousSibling;
+
+        // Skip empty text nodes if any exist
+        while (prev && prev.nodeType === Node.TEXT_NODE && prev.textContent.length === 0) {
+          prev = prev.previousSibling;
+        }
+
+        if (prev) {
+          // CASE A: Previous is a Badge -> DELETE IT
+          if (
+            prev.nodeType === Node.ELEMENT_NODE &&
+            (prev.classList.contains("sp-type-badge") || prev.classList.contains("sp-bool-wrapper"))
+          ) {
+            e.preventDefault();
+            prev.remove();
+            state.scratchpadConfig = window.getScratchpadContent();
+            renderScratchpad();
+            return;
+          }
+
+          // CASE B: Previous is a Syntax Span -> DELETE LAST CHAR MANUALLY
+          // This fixes the "double backspace" issue by modifying the previous text directly
+          if (prev.nodeType === Node.ELEMENT_NODE || prev.nodeType === Node.TEXT_NODE) {
+            e.preventDefault();
+
+            let textTarget = prev;
+            // If it's a span (like .sp-token-key), get its inner text node
+            if (prev.nodeType === Node.ELEMENT_NODE && prev.firstChild) {
+              textTarget = prev.lastChild;
+            }
+
+            if (textTarget.nodeType === Node.TEXT_NODE && textTarget.textContent.length > 0) {
+              const newText = textTarget.textContent.slice(0, -1);
+              textTarget.textContent = newText;
+
+              // Move cursor to end of that modified node
+              const newRange = document.createRange();
+              newRange.setStart(textTarget, newText.length);
+              newRange.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(newRange);
+
+              // Trigger quick save (debounce will handle the render)
+              state.scratchpadConfig = window.getScratchpadContent();
+            }
+            return;
+          }
+        }
+      }
+    }
+  }
+});
+
+// Disable spellcheck explicitly on the element to reduce squiggly lines on code
+editorEl.setAttribute("spellcheck", "false");
+
+// --- SIDEBAR & UTILS ---
+function getIconForType(type) {
+  // Handle object types
+  if (typeof type === "object") {
+    if (type.enum) type = "enum";
+    else type = type.type || "unknown";
+  }
+  type = (type || "unknown").toString().toLowerCase();
+
+  const icons = {
+    boolean: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`,
+    string: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>`,
+    array: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`,
+    set: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M3 12h1m8-9v1m8 8h1M5.6 5.6l.7.7m12.1-.7l-.7.7m0 11.4l.7.7m-12.1-.7l-.7.7"/></svg>`,
+    number: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>`,
+    enum: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+    null: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>`,
+    function: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>`,
+    unknown: `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`,
+  };
+  if (type.includes("list")) return icons.array;
+  if (type.includes("attrs")) return icons.set;
+  if (type.includes("int") || type.includes("float")) return icons.number;
+  return icons[type] || icons.unknown;
+}
+
+function openInspector(path, meta, type) {
+  state.currentMeta = meta;
+  const isFav = state.favorites.includes(`${type}:${path}`);
+  const body = document.getElementById("sidebar-body");
+
+  let typeLabel =
+    meta && meta.type?.name != null ? meta.type.name : meta && meta.type ? meta.type : "Unknown";
+  let typeIcon = getIconForType(typeLabel);
+  if (typeof typeLabel === "object") {
+    if (typeLabel.enum) typeLabel = "Enum";
+    else typeLabel = typeLabel.type || "Complex";
+  }
+
+  let typeHtml = "";
+  if (meta && meta.type) {
+    typeHtml = `
+                    <div class="adw-group" style="margin: 0 12px 24px 12px;">
+                        <div class="adw-row" style="padding: 10px 16px; min-height: 44px;">
+                            <div style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:0.9rem">
+                                ${typeIcon}
+                                <span style="text-transform:capitalize">${escapeHTML(typeLabel)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+  }
+
+  let html = `
+                <div class="adw-group-title" style="margin-top:12px; margin-left:24px; display:flex; justify-content:space-between; align-items:center; padding-right:12px">
+                    <span>Identifier</span>
+                    <button class="adw-button icon-only" onclick="toggleFavorite('${path}', '${type}')" title="${isFav ? "Unpin" : "Pin"}">
+                        <svg width="16" height="16" fill="${isFav ? "var(--accent-yellow)" : "none"}" stroke="${isFav ? "var(--accent-yellow)" : "currentColor"}" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    </button>
+                </div>
+                <div class="adw-group" style="margin: 0 12px 24px 12px;">
+                    <div class="adw-row" style="flex-direction: column; align-items: flex-start; gap: 12px; border-bottom:none;">
+                        <div style="font-family:var(--font-mono); font-size:0.85rem; word-break:break-all;" id="inspector-id-text">${path}</div>
+                        <div style="display:flex; gap:8px; width:100%; justify-content:center;">
+                             <div class="maintainer-chip" style="background:var(--accent-bg); color:var(--accent-fg); flex:0 0 auto; min-width:140px; justify-content:center; text-align:center" onclick="addToScratchpad('${path}', '${type}')">
+                                + Add to Scratchpad
+                             </div>
+                             <div class="maintainer-chip" style="background:var(--accent-bg); color:var(--accent-fg); flex:0 0 auto; min-width:100px; justify-content:center; text-align:center" onclick="copyToClipboard('${path}')">
+                                Copy ID
+                             </div>
+                        </div>
+                    </div>
+                </div>
+                ${typeHtml ? `<div class="adw-group-title" style="margin-left:24px;">Type</div>${typeHtml}` : ""}
+            `;
+
+  if (state.geminiKey) {
+    html += `
+                    <div class="adw-group-title" style="margin-left:24px; display:flex; align-items:center; gap:8px;">
+                        <span>Smart Assistant</span>
+                        <span style="font-size:0.6em; opacity:0.7; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px">✨ GEMINI</span>
+                    </div>
+                    <div class="adw-group" id="ai-container-group" style="margin: 0 12px 24px 12px; transition: border-color 0.3s;">
+                        <div class="adw-row" style="cursor: pointer; justify-content: center; font-weight: 800;" onclick="askGemini('${path}', '${type}')">
+                            <span class="ai-btn-text">✨ Explain & Generate Config</span>
+                        </div>
+                        <div id="ai-content-area" style="display:none; padding: 16px;">
+                            <div class="markdown-body" id="ai-response-text" style="font-size:0.9em; background:transparent; padding:0!important; border:none;"></div>
+                        </div>
+                    </div>
+                `;
+  }
+
+  if (meta) {
+    const shortDesc = meta.summary || meta.description;
+    const longDesc = meta.summary ? meta.description : meta.longDescription;
+    if (shortDesc)
+      html += `<div class="adw-group-title" style="margin-left:24px;">Description</div><div class="adw-group" style="margin: 0 12px 24px 12px;"><div class="adw-row" style="cursor:default; padding:16px; color:var(--text-color)" id="inspector-desc-text">${escapeHTML(shortDesc)}</div></div>`;
+
+    // --- UPDATED MAINTAINER LOGIC ---
+    if (meta.maintainers && meta.maintainers.length) {
+      html += `<div class="adw-group-title" style="margin-left:24px;">Maintainers</div><div class="chip-grid" style="padding: 0 12px; margin-bottom:24px;">`;
+      meta.maintainers.forEach((m) => {
+        // Handle Object vs String
+        const isObj = typeof m === "object" && m !== null;
+        const label = isObj ? m.name || "Unknown" : m;
+
+        // If object, use it directly. If string, try registry lookup, else fallback.
+        const mData = isObj
+          ? m
+          : state.data && state.data.maintainers && state.data.maintainers[m]
+            ? state.data.maintainers[m]
+            : { name: m };
+
+        // Safe serialization for HTML attribute (replace double quotes with entity)
+        const safeData = JSON.stringify(mData).replace(/"/g, "&quot;");
+
+        html += `<div class="maintainer-chip" onclick="showMaintainerPopup('${escapeHTML(label)}', ${safeData}, this)">${escapeHTML(label)}</div>`;
+      });
+      html += `</div>`;
+    }
+    // --------------------------------
+
+    if (longDesc)
+      html += `<div class="adw-group-title" style="margin-left:24px;">Documentation</div><div class="markdown-body" style="margin: 0 12px 24px 12px;">${marked.parse(longDesc)}</div>`;
+  }
+  body.innerHTML = html;
+}
+
+// --- GLOBAL EXPORTS ---
+window.setLoading = (isLoading) => {};
+
+window.toggleMenu = (triggerEl) => {
+  const menu = document.getElementById("menu-popover");
+
+  // If we passed 'this' from HTML, use it. Otherwise fallback to the desktop ID.
+  const btn = triggerEl || document.getElementById("menu-btn");
+
+  if (menu.classList.contains("visible")) {
+    menu.classList.remove("visible");
+  } else {
+    const rect = btn.getBoundingClientRect();
+    const menuWidth = 220;
+
+    // Smart Positioning
+    let left = rect.left + rect.width / 2 - menuWidth / 2;
+
+    // Prevent going off-screen (Mobile edge case)
+    if (left < 10) left = 10;
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${rect.bottom + 12}px`;
+    menu.classList.add("visible");
+  }
+};
+
+window.toggleFavGroup = () => {
+  state.favsCollapsed = !state.favsCollapsed;
+  renderRegistry(state.data);
+};
+
+window.openModal = (id) => {
+  document.getElementById("menu-popover").classList.remove("visible");
+  document.getElementById(`modal-${id}`).classList.add("visible");
+  if (id === "about") window.aboutNav("main");
+  if (id === "keybinds") window.renderKeybindView();
+};
+
+window.closeModal = (id) => {
+  document.getElementById(`modal-${id}`).classList.remove("visible");
+  if (id === "about") {
+    setTimeout(() => {
+      document.getElementById("about-window").classList.remove("wide");
+    }, 300);
+  }
+};
+
+window.toggleVersionDropdown = () => {
+  const dd = document.getElementById("version-dropdown");
+  const isVisible = dd.classList.toggle("visible");
+  if (isVisible) {
+    setTimeout(() => {
+      const first = dd.querySelector(".version-item");
+      if (first) first.focus();
+    }, 50);
+  }
+};
+
+window.toggleTheme = () => {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  applyTheme();
+  updateStyles();
+  saveSettings();
+};
+
+window.toggleReducedMotion = () => {
+  state.reducedMotion = !state.reducedMotion;
+  document.body.classList.toggle("reduce-motion", state.reducedMotion);
+  document.getElementById("motion-row").classList.toggle("active", state.reducedMotion);
+  saveSettings();
+};
+
+window.updateTransparency = (val) => {
+  state.transparency = val;
+  updateStyles();
+  saveSettings();
+};
+
+window.updateComboTimeout = (val) => {
+  state.comboTimeout = val;
+  document.getElementById("combo-timeout-val").textContent = `${val}ms`;
+  saveSettings();
+};
+
+window.saveSettings = async () => {
+  state.ghToken = document.getElementById("gh-token-input").value;
+  state.geminiKey = document.getElementById("gemini-key-input").value;
+  state.customFont = document.getElementById("custom-font-input").value;
+  state.customCSS = document.getElementById("custom-css-input").value;
+
+  await settingsStore.setItem("user_prefs", {
+    theme: state.theme,
+    accent: state.accent,
+    reducedMotion: state.reducedMotion,
+    transparency: state.transparency,
+    ghToken: state.ghToken,
+    geminiKey: state.geminiKey,
+    keybinds: state.keybinds,
+    comboTimeout: state.comboTimeout,
+    advancedScratchpad: state.advancedScratchpad,
+    customFont: state.customFont,
+    customCSS: state.customCSS,
+  });
+  await settingsStore.setItem("user_history", {
+    commandHistory: state.commandHistory,
+    favorites: state.favorites,
+    recents: state.recents,
+    searchHistory: state.searchHistory,
+    scratchpadConfig: state.scratchpadConfig,
+  });
+  updateStyles();
+};
+
+window.formatKeybind = (str) => {
+  if (!str) return "";
+  return str
+    .split(" ")
+    .map((chord) => {
+      return chord
+        .split("+")
+        .map((part) => {
+          if (part.length === 1) return part.toUpperCase();
+          return part.charAt(0).toUpperCase() + part.slice(1);
+        })
+        .join("+");
+    })
+    .join(" ");
+};
+
+window.applyKbPreset = (preset) => {
+  if (preset === "standard") {
+    state.keybinds = {
+      search: "Ctrl+f",
+      up: "ArrowUp",
+      down: "ArrowDown",
+      left: "ArrowLeft",
+      right: "ArrowRight",
+      copyId: "Ctrl+c",
+      copyDesc: "Ctrl+Shift+c",
+      version: "Ctrl+,",
+      settings: "Ctrl+.",
+      about: "Ctrl+Shift+a",
+      top: "Home",
+      bottom: "End",
+      nextMatch: "F3",
+      prevMatch: "Shift+F3",
+      clearSearch: "Escape",
+    };
+  } else if (preset === "vim") {
+    state.keybinds = {
+      search: "/",
+      up: "k",
+      down: "j",
+      left: "h",
+      right: "l",
+      copyId: "y",
+      copyDesc: "Shift+y",
+      version: "Ctrl+,",
+      settings: "Ctrl+.",
+      about: "Ctrl+Shift+a",
+      top: "g g",
+      bottom: "Shift+g",
+      nextMatch: "n",
+      prevMatch: "Shift+n",
+      clearSearch: "Escape",
+    };
+  } else if (preset === "emacs") {
+    state.keybinds = {
+      search: "Ctrl+s",
+      up: "Ctrl+p",
+      down: "Ctrl+n",
+      left: "Ctrl+b",
+      right: "Ctrl+f",
+      copyId: "Alt+w",
+      copyDesc: "Alt+Shift+w",
+      version: "Ctrl+,",
+      settings: "Ctrl+.",
+      about: "Ctrl+Shift+a",
+      top: "Alt+<",
+      bottom: "Alt+>",
+      nextMatch: "Ctrl+g",
+      prevMatch: "Ctrl+Shift+g",
+      clearSearch: "Escape",
+    };
+  }
+  document.querySelectorAll(".keybind-input").forEach((input) => {
+    input.value = state.keybinds[input.dataset.bind];
+  });
+  window.saveSettings();
+  showToast("Keybind Preset Applied");
+};
+
+window.closeSearch = () => {
+  const s =
+    window.innerWidth < 768
+      ? document.getElementById("search-bar-mobile")
+      : document.getElementById("search-bar");
+  const b = document.getElementById("breadcrumbs");
+  const input =
+    window.innerWidth < 768
+      ? document.getElementById("search-input-mobile")
+      : document.getElementById("search-input");
+  const history = document.getElementById("search-history");
+
+  s.classList.remove("visible");
+  b.classList.remove("hidden");
+  history.classList.remove("visible"); // Close history
+  input.value = "";
+  input.blur();
+
+  state.searchMatchIndex = -1;
+  renderRegistry(state.data);
+  showToast("Search cleared");
+};
+
+window.renderKeybindView = () => {
+  const container = document.getElementById("kb-view-content");
+  let html = '<div class="adw-group" style="margin-top:0">';
+  Object.entries(state.keybinds).forEach(([k, v]) => {
+    html += `<div class="adw-row" style="min-height:44px; padding:8px 16px"><span style="text-transform:capitalize">${k.replace(/([A-Z])/g, " $1").trim()}</span><span class="kb-key">${window.formatKeybind(v)}</span></div>`;
+  });
+  html += `<div class="adw-row" style="min-height:44px; padding:8px 16px"><span>Global: Command Palette</span><span class="kb-key">Ctrl+K</span></div>`;
+  html += "</div>";
+  container.innerHTML = html;
+};
+
+window.copyToClipboard = (text) => {
+  navigator.clipboard.writeText(text);
+  showToast("Copied to Clipboard");
+};
+
+window.toggleFavorite = async (path, type) => {
+  const key = `${type}:${path}`;
+  if (state.favorites.includes(key)) {
+    state.favorites = state.favorites.filter((k) => k !== key);
+    showToast("Removed from Favorites");
+  } else {
+    state.favorites.push(key);
+    showToast("Added to Favorites");
+  }
+  await settingsStore.setItem("user_history", {
+    favorites: state.favorites,
+    recents: state.recents,
+    searchHistory: state.searchHistory,
+    scratchpadConfig: state.scratchpadConfig,
+  });
+
+  renderRegistry(state.data);
+  openInspector(path, state.currentMeta, type);
+};
+
+function addToRecents(path, type) {
+  const key = `${type}:${path}`;
+  state.recents = state.recents.filter((k) => k !== key); // Remove duplicates
+  state.recents.unshift(key); // Add to top
+  if (state.recents.length > 10) state.recents.pop(); // Keep max 10
+  settingsStore.setItem("user_history", {
+    favorites: state.favorites,
+    recents: state.recents,
+    searchHistory: state.searchHistory,
+    scratchpadConfig: state.scratchpadConfig,
+  });
+}
+
+window.toggleSearch = () => {
+  const s =
+    window.innerWidth < 768
+      ? document.getElementById("search-bar-mobile")
+      : document.getElementById("search-bar");
+  const b = document.getElementById("breadcrumbs");
+  const input =
+    window.innerWidth < 768
+      ? document.getElementById("search-input-mobile")
+      : document.getElementById("search-input");
+  const history = document.getElementById("search-history");
+
+  input.value = "";
+
+  state.searchMatchIndex = -1;
+  renderRegistry(state.data);
+
+  const isVisible = s.classList.toggle("visible");
+  b.classList.toggle("hidden", isVisible);
+
+  if (isVisible) {
+    input.focus();
+    if (input.value) renderSearchHistory();
+  } else {
+    history.classList.remove("visible");
+    input.blur();
+  }
+};
+
+// --- INTERNAL LOGIC ---
+async function loadSettings() {
+  const prefs = await settingsStore.getItem("user_prefs");
+  const history = await settingsStore.getItem("user_history");
+
+  if (prefs) {
+    state.theme = prefs.theme || "dark";
+    state.accent = prefs.accent || "purple";
+    state.reducedMotion = !!prefs.reducedMotion;
+    state.transparency = prefs.transparency !== undefined ? prefs.transparency : 0.06;
+    state.ghToken = prefs.ghToken || "";
+    state.geminiKey = prefs.geminiKey || "";
+    state.comboTimeout = prefs.comboTimeout || 500;
+    state.customFont = prefs.customFont || "";
+    state.customCSS = prefs.customCSS || "";
+    state.advancedScratchpad =
+      prefs.advancedScratchpad !== undefined ? prefs.advancedScratchpad : true;
+
+    if (prefs.keybinds) state.keybinds = { ...state.keybinds, ...prefs.keybinds };
+
+    const radio = document.querySelector(`input[name="accent"][value="${state.accent}"]`);
+    if (radio) radio.checked = true;
+
+    document.getElementById("transparency-slider").value = state.transparency;
+    document.getElementById("combo-timeout-slider").value = state.comboTimeout;
+    document.getElementById("combo-timeout-val").textContent = state.comboTimeout + "ms";
+    document.getElementById("gh-token-input").value = state.ghToken;
+    document.getElementById("gemini-key-input").value = state.geminiKey;
+    document.getElementById("custom-font-input").value = state.customFont;
+    document.getElementById("custom-css-input").value = state.customCSS;
+
+    document.getElementById("motion-row").classList.toggle("active", state.reducedMotion);
+    document.body.classList.toggle("reduce-motion", state.reducedMotion);
+    const row = document.getElementById("sp-mode-row");
+    if (row) row.classList.toggle("active", state.advancedScratchpad);
+  }
+  if (history) {
+    state.favorites = history.favorites || [];
+    state.recents = history.recents || [];
+    state.searchHistory = history.searchHistory || [];
+    state.commandHistory = history.commandHistory || [];
+    state.scratchpadConfig = history.scratchpadConfig || "";
+    renderScratchpad();
+  }
+  document.querySelectorAll(".keybind-input").forEach((input) => {
+    input.value = state.keybinds[input.dataset.bind];
+  });
+  applyTheme();
+  updateStyles();
+  updateCacheStats();
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme);
+  document.getElementById("theme-row").classList.toggle("active", state.theme === "dark");
+}
+
+function updateStyles() {
+  const colorMap = {
+    blue: "#3584e4",
+    teal: "#2190a4",
+    green: "#3a944a",
+    yellow: "#c88800",
+    orange: "#ed5b00",
+    red: "#e62d42",
+    pink: "#d56199",
+    purple: "#9141ac",
+    slate: "#6f8396",
+  };
+  document.documentElement.style.setProperty("--accent-bg", colorMap[state.accent]);
+  const mode = state.theme === "light" ? "light" : "dark";
+  document.documentElement.style.setProperty(
+    "--link-color",
+    `var(--accent-link-${state.accent}-${mode})`,
+  );
+  document.documentElement.style.setProperty("--card-opacity", state.transparency);
+
+  if (state.customFont) {
+    document.documentElement.style.setProperty("--font-ui", state.customFont);
+    document.documentElement.style.setProperty("--font-mono", state.customFont);
+  }
+
+  document.getElementById("user-custom-css").textContent = state.customCSS || "";
+}
+
+async function init() {
+  const loader = document.getElementById("loader");
+  loader.style.display = "flex";
+  await loadSettings();
+
+  window.addEventListener("online", updateOnlineStatus);
+  window.addEventListener("offline", updateOnlineStatus);
+  updateOnlineStatus();
+
+  try {
+    const cachedReleases = await dataStore.getItem("releases_list");
+    if (cachedReleases) state.versions = cachedReleases;
+
+    fetchReleases().then((v) => {
+      state.versions = v;
+      updateVersionUI();
+    });
+
+    let initialMeta = null;
+    window.setLoading(true);
+
+    const metaRes = await fetchWithAuth(
+      `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/latestCommit.json`,
+    );
+    initialMeta = await metaRes.json();
+
+    if (initialMeta.options || initialMeta.pkgs) {
+      state.data = initialMeta;
+      state.selectedVersion = "Latest Commit";
+      renderRegistry(initialMeta);
+    } else {
+      await loadVersion(initialMeta.latest);
+    }
+    updateVersionUI();
+
+    if (window.location.hash.length > 1) {
+      try {
+        // if(window.outerWidth < 768) return;
+        const hash = window.location.hash.substring(1);
+        const [rawType, rawPath] = hash.split(":");
+        const type = decodeURIComponent(rawType);
+        const path = decodeURIComponent(rawPath);
+
+        if (type && path && state.data[type]) {
+          const pathParts = path.split(".");
+          let current = state.data[type];
+          let isValid = true;
+
+          for (const part of pathParts) {
+            if (current[part]) {
+              current = current[part].sub || current[part];
+            } else {
+              isValid = false;
+              break;
+            }
+          }
+
+          if (isValid) {
+            setTimeout(() => {
+              window.navigateToPath(path, type);
+              if (state.focusedRow) state.focusedRow.el.scrollIntoView({ block: "center" });
+            }, 100);
+          } else {
+            throw new Error(`Path "${path}" not found`);
+          }
+        } else {
+          throw new Error(`Invalid type or path format`);
+        }
+      } catch (e) {
+        window.location.hash = "";
+        updateBreadcrumbs("", "");
+        window.navigateToPath(null, null);
+        showToast(`Error: ${e.message}`, true);
+      }
+    } else {
+      updateBreadcrumbs("", "");
+      window.navigateToPath(null, null);
+    }
+
+    window.setLoading(false);
+
+    setInterval(
+      () =>
+        fetchReleases().then((v) => {
+          state.versions = v;
+          updateVersionUI();
+        }),
+      300000,
+    );
+  } catch (e) {
+    loader.innerHTML = `<div style="color:var(--accent-red)">Failed to initialize: ${e.message}</div>`;
+    window.setLoading(false);
+  }
+  loader.style.display = "none";
+}
+
+function updateOnlineStatus() {
+  const ind = document.getElementById("net-status");
+  if (state.selectedVersion === "Local File") {
+    ind.className = "offline-indicator local";
+    ind.title = "Local File";
+    return;
+  } else {
+    ind.classList.remove("local");
+  }
+  if (navigator.onLine) {
+    ind.classList.remove("offline");
+    ind.title = "Online";
+  } else {
+    ind.classList.add("offline");
+    ind.title = "Offline";
+  }
+}
+
+async function fetchWithAuth(url) {
+  const headers = {};
+  if (state.ghToken) headers["Authorization"] = `Bearer ${state.ghToken}`;
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res;
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function loadVersion(v) {
+  const loader = document.getElementById("loader");
+  const root = document.getElementById("registry-root");
+  root.style.display = "none";
+  loader.style.display = "flex";
+  window.setLoading(true);
+
+  try {
+    let data = await dataStore.getItem(`version_${v}`);
+    if (!data) {
+      const res = await fetchWithAuth(
+        `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/${v}.json`,
+      );
+      data = await res.json();
+      await dataStore.setItem(`version_${v}`, data);
+    }
+    state.data = data;
+    state.selectedVersion = v;
+    renderRegistry(data);
+    updateVersionUI();
+    updateBreadcrumbs("", "");
+    window.navigateToPath(null, null);
+    updateCacheStats();
+    updateOnlineStatus();
+  } catch (e) {
+    loader.innerHTML = `<div>Error loading ${v}</div>`;
+  }
+
+  window.setLoading(false);
+  loader.style.display = "none";
+  root.style.display = "block";
+}
+
+async function updateCacheStats() {
+  const keys = await dataStore.keys();
+  document.getElementById("cache-stats").textContent = `${keys.length} items cached`;
+}
+
+window.updateVersionUI = () => {
+  if (!state.selectedVersion) state.selectedVersion = "Latest Commit";
+
+  const label = state.selectedVersion === "latestCommit" ? "Latest Commit" : state.selectedVersion;
+  const vLabelEl = document.getElementById("current-version");
+  if (vLabelEl) vLabelEl.textContent = label;
+
+  const container = document.getElementById("version-list-container"); // Fixed ID
+  if (!container) return;
+  container.innerHTML = "";
+
+  const addOption = (v, text) => {
+    const item = document.createElement("div");
+    item.className = "version-item " + (state.selectedVersion === v ? "active" : "");
+    item.textContent = text;
+
+    // Connect to our new handler
+    item.onclick = () => {
+      handleVersionClick(v);
+      document.getElementById("version-dropdown").classList.remove("visible");
+    };
+
+    container.appendChild(item);
+  };
+
+  addOption("latestCommit", "Latest Commit");
+
+  if (state.versions && state.versions.length > 0) {
+    const sep = document.createElement("div");
+    sep.className = "version-separator";
+    sep.innerHTML = "<span>RELEASES</span>";
+    container.appendChild(sep);
+    state.versions.forEach((v) => addOption(v, v));
+  }
+};
+
+function renderRegistry(data) {
+  const root = document.getElementById("registry-root");
+  root.innerHTML = "";
+  renderDashboardWidgets(root);
+
+  // Reset active scrollers list
+  state.activeScrollers = [];
+
+  // 1. Favorites (Unchanged)
+  if (state.favorites.length > 0) {
+    const title = document.createElement("div");
+    title.className = `adw-group-title fav-header ${state.favsCollapsed ? "collapsed" : ""}`;
+    title.onclick = window.toggleFavGroup;
+    title.innerHTML = `Favorites <span class="fav-caret">▼</span>`;
+    root.appendChild(title);
+
+    if (!state.favsCollapsed) {
+      const container = document.createElement("div");
+      container.className = "tree-root";
+      state.favorites.forEach((favKey) => {
+        const [type, path] = favKey.split(":");
+        const row = document.createElement("div");
+        row.className = "tree-row";
+        row.dataset.path = path;
+        row.dataset.type = type;
+        row.dataset.hasSub = "false";
+        row.innerHTML = `<div class="row-icon leaf" style="color:var(--accent-yellow)">★</div><div class="row-label">${escapeHTML(path)}</div>`;
+        row.onclick = () => {
+          navigateToPath(path, type);
+          openMobileSheet();
+        };
+        const wrapper = document.createElement("div");
+        wrapper.className = "tree-node-wrapper";
+        wrapper.style.marginLeft = "0";
+        wrapper.style.border = "none";
+        wrapper.appendChild(row);
+        container.appendChild(wrapper);
+      });
+      root.appendChild(container);
+    }
+  }
+
+  const categories = [
+    { k: "options", l: "Nix Options" },
+    { k: "pkgs", l: "Packages" },
+    { k: "maintainers", l: "Maintainers" },
+  ];
+
+  categories.forEach((cat) => {
+    if (!data[cat.k]) return;
+
+    const title = document.createElement("div");
+    title.className = "adw-group-title";
+    title.textContent = cat.l;
+    root.appendChild(title);
+
+    const keys = Object.keys(data[cat.k]).sort();
+    const totalItems = keys.length;
+
+    // SPECIAL CASE: Maintainers (Chips)
+    if (cat.k === "maintainers") {
+      const container = document.createElement("div");
+      container.className = "chip-grid";
+      keys.forEach((key) => {
+        const chip = document.createElement("div");
+        chip.className = "maintainer-chip";
+        chip.textContent = data[cat.k][key].name || key;
+        chip.onclick = (e) => showMaintainerPopup(key, data[cat.k][key], e.currentTarget);
+        container.appendChild(chip);
+      });
+      root.appendChild(container);
+      return;
+    }
+
+    const container = document.createElement("div");
+    container.className = "tree-root";
+    root.appendChild(container);
+
+    // --- HYBRID SWITCH ---
+    if (totalItems > 1000) {
+      // VIRTUAL MODE
+      // Initial Flattening (Level 0 only)
+      let flatItems = keys.map((k) => ({
+        key: k,
+        data: data[cat.k][k],
+        path: k,
+        type: cat.k,
+        level: 0,
+        expanded: false,
+        hasSub: data[cat.k][k].sub && Object.keys(data[cat.k][k].sub).length > 0,
+      }));
+
+      const scroller = new VirtualScroller(
+        container,
+        flatItems,
+        44,
+        (row, item) => {
+          // Render Row
+          const label = escapeHTML(item.key);
+          if (state.diffMode && state.diffBaseData && !state.diffBaseData[item.type][item.path]) {
+            row.classList.add("status-new");
+          }
+
+          const iconClass = item.hasSub
+            ? item.expanded
+              ? "row-icon expanded"
+              : "row-icon"
+            : "row-icon leaf";
+          const symbol = item.hasSub ? "▶" : "●";
+          const padding = 16 + item.level * 20;
+
+          row.style.paddingLeft = `${padding}px`;
+
+          // 1. Label
+          row.innerHTML = `<div class="${iconClass}">${symbol}</div><div class="row-label">${label}</div>`;
+
+          // 2. Info Button
+          row.innerHTML += `<div class="info-btn" onclick="event.stopPropagation(); selectNode(this.closest('.virtual-row'), '${item.path}', item.data, '${item.type}', null, ${item.hasSub}); openMobileSheet();"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>`;
+
+          const textEl = row.querySelector(".row-label");
+          if (textEl) void textEl.offsetHeight;
+
+          if (state.focusedRow && state.focusedRow.path === item.path)
+            row.classList.add("selected");
+        },
+        (e, item, row) => {
+          // On Row Click
+          e.stopPropagation();
+
+          // Select
+          selectNode(row, item.path, item.data, item.type, null, item.hasSub);
+
+          if (item.hasSub) {
+            // Toggle Expand ONLY
+            item.expanded = !item.expanded;
+            const currentList = scroller.items;
+
+            if (item.expanded) {
+              // EXPAND
+              const subKeys = Object.keys(item.data.sub).sort();
+              const newItems = subKeys.map((k) => ({
+                key: k,
+                data: item.data.sub[k],
+                path: `${item.path}.${k}`,
+                type: item.type,
+                level: item.level + 1,
+                expanded: false,
+                hasSub: item.data.sub[k].sub && Object.keys(item.data.sub[k].sub).length > 0,
+                parentId: item.path,
+              }));
+              const idx = currentList.indexOf(item);
+              if (idx !== -1) currentList.splice(idx + 1, 0, ...newItems);
+            } else {
+              // COLLAPSE
+              const idx = currentList.indexOf(item);
+              let count = 0;
+              for (let i = idx + 1; i < currentList.length; i++) {
+                if (currentList[i].level > item.level) count++;
+                else break;
+              }
+              if (count > 0) currentList.splice(idx + 1, count);
+            }
+            scroller.setItems(currentList);
+          } else {
+            // LEAF: Open sheet
+            openMobileSheet();
+          }
+        },
+      );
+
+      state.activeScrollers.push({ scroller, type: cat.k });
+    } else {
+      // STANDARD MODE
+      renderRecursiveTree(data[cat.k], container, "", cat.k);
+    }
+  });
+}
+function renderRecursiveTree(nodes, container, path, type, forceExpand = false) {
+  // 1. Get Union of Keys (Current + Old)
+  const currentKeys = nodes ? Object.keys(nodes) : [];
+  let oldKeys = [];
+  let oldParentNode = null;
+
+  if (state.diffMode && state.diffBaseData) {
+    if (path === "") {
+      oldParentNode = state.diffBaseData[type];
+    } else {
+      oldParentNode = resolveNode(state.diffBaseData, type, path);
+    }
+
+    if (oldParentNode) {
+      oldKeys = Object.keys(oldParentNode.sub || oldParentNode || {});
+    }
+  }
+
+  // Combine and Sort unique keys
+  const allKeys = Array.from(new Set([...currentKeys, ...oldKeys])).sort();
+
+  allKeys.forEach((key) => {
+    const node = nodes ? nodes[key] : null; // New/Current
+
+    // Determine Old Node
+    let oldNode = null;
+    if (oldParentNode) {
+      oldNode =
+        oldParentNode.sub && oldParentNode.sub[key] ? oldParentNode.sub[key] : oldParentNode[key];
+    }
+
+    if (!node && !oldNode) return;
+
+    const displayNode = node || oldNode;
+    const currentPath = path ? `${path}.${key}` : key;
+    const hasSub = displayNode.sub && Object.keys(displayNode.sub).length > 0;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "tree-node-wrapper";
+    const row = document.createElement("div");
+    row.className = "tree-row";
+    row.dataset.path = currentPath;
+    row.dataset.hasSub = hasSub;
+    row.dataset.type = type;
+
+    // --- DIFF STATUS LOGIC ---
+    if (state.diffMode) {
+      if (!node && oldNode) {
+        row.classList.add("status-deleted");
+        row.title = "Deleted in current version";
+      } else if (node && !oldNode) {
+        row.classList.add("status-new");
+        row.title = "New in current version";
+      } else if (node && oldNode) {
+        const cleanMeta = (m) => {
+          if (!m) return {};
+          const { position, ...rest } = m;
+          return rest;
+        };
+        const metaDiff =
+          JSON.stringify(cleanMeta(node.meta)) !== JSON.stringify(cleanMeta(oldNode.meta));
+        if (metaDiff) {
+          row.classList.add("status-modified");
+          row.title = "Modified";
+        }
+      }
+    }
+
+    if (!row.title && displayNode.meta) {
+      row.title = escapeHTML(displayNode.meta.summary || displayNode.meta.description || "");
+    }
+
+    const label = escapeHTML(key);
+
+    // Build Row HTML
+    row.innerHTML = `<div class="row-icon ${hasSub ? "" : "leaf"}">${hasSub ? "▶" : "●"}</div><div class="row-label">${label}</div>`;
+    if (!displayNode.meta && !hasSub) row.innerHTML += `<div class="meta-badge">NO META</div>`;
+
+    // --- INFO BUTTON ---
+    const infoBtn = document.createElement("div");
+    infoBtn.className = "info-btn";
+    infoBtn.innerHTML = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`;
+    infoBtn.onclick = (e) => {
+      e.stopPropagation();
+      selectNode(row, currentPath, displayNode, type, wrapper, hasSub);
+      openMobileSheet();
+    };
+    row.appendChild(infoBtn);
+
+    // --- ROW CLICK HANDLER ---
+    row.onclick = (e) => {
+      e.stopPropagation();
+      selectNode(row, currentPath, displayNode, type, wrapper, hasSub);
+
+      if (hasSub) {
+        const childrenWrapper = wrapper.querySelector(".tree-children-wrapper");
+        const childrenContainer = wrapper.querySelector(".tree-children");
+
+        if (childrenWrapper.classList.contains("open")) {
+          childrenWrapper.classList.remove("open");
+          row.querySelector(".row-icon").classList.remove("expanded");
+          setTimeout(() => {
+            if (!childrenWrapper.classList.contains("open")) {
+              childrenContainer.innerHTML = "";
+            }
+          }, 250);
+        } else {
+          if (!childrenContainer.hasChildNodes()) {
+            renderRecursiveTree(node ? node.sub : null, childrenContainer, currentPath, type);
+          }
+          requestAnimationFrame(() => {
+            childrenWrapper.classList.add("open");
+            row.querySelector(".row-icon").classList.add("expanded");
+          });
+        }
+      } else {
+        openMobileSheet(); // Leaf click opens sheet
+      }
+    };
+    wrapper.appendChild(row);
+
+    if (hasSub) {
+      const anim = document.createElement("div");
+      anim.className = "tree-children-wrapper";
+      const children = document.createElement("div");
+      children.className = "tree-children";
+
+      // FORCE EXPAND LOGIC
+      if (forceExpand) {
+        anim.classList.add("open");
+        row.querySelector(".row-icon").classList.add("expanded");
+        renderRecursiveTree(node ? node.sub : null, children, currentPath, type, true);
+      }
+
+      anim.appendChild(children);
+      wrapper.appendChild(anim);
+    }
+    container.appendChild(wrapper);
+  });
+}
+
+function getSearchTreeItems(nodes, type, query) {
+  const lowerQuery = query.toLowerCase();
+  const resultItems = [];
+  const includedPaths = new Set();
+
+  // 1. First Pass: Find all leaf-level matches and mark their ancestors
+  function findMatches(currentNodes, currentPath) {
+    Object.keys(currentNodes).forEach((key) => {
+      const node = currentNodes[key];
+      const path = currentPath ? `${currentPath}.${key}` : key;
+      const isMatch = key.toLowerCase().includes(lowerQuery);
+
+      if (isMatch) {
+        // Mark this path and all its parents for inclusion
+        const parts = path.split(".");
+        let acc = "";
+        parts.forEach((part, i) => {
+          acc = i === 0 ? part : `${acc}.${part}`;
+          includedPaths.add(acc);
+        });
+      }
+
+      if (node.sub) {
+        findMatches(node.sub, path);
+      }
+    });
+  }
+
+  findMatches(nodes, "");
+
+  // 2. Second Pass: Flatten only the marked paths into the virtual list
+  function flattenIncluded(currentNodes, currentPath, level) {
+    const keys = Object.keys(currentNodes).sort();
+    keys.forEach((key) => {
+      const path = currentPath ? `${currentPath}.${key}` : key;
+
+      if (includedPaths.has(path)) {
+        const node = currentNodes[key];
+        const hasSub = node.sub && Object.keys(node.sub).length > 0;
+        const isActualMatch = key.toLowerCase().includes(lowerQuery);
+
+        resultItems.push({
+          key: key,
+          path: path,
+          data: node,
+          level: level,
+          type: type,
+          hasSub: hasSub,
+          isMatch: isActualMatch,
+          expanded: true,
+        });
+
+        if (hasSub) {
+          flattenIncluded(node.sub, path, level + 1);
+        }
+      }
+    });
+  }
+
+  flattenIncluded(nodes, "", 0);
+  return resultItems;
+}
+
+function renderFilteredTree(nodes, container, path, type, query) {
+  const flatItems = [];
+
+  function collectMatches(currentNodes, currentPath, level) {
+    const keys = Object.keys(currentNodes).sort();
+    keys.forEach((key) => {
+      const node = currentNodes[key];
+      const nextPath = currentPath ? `${currentPath}.${key}` : key;
+      const lowerPath = nextPath.toLowerCase();
+      const lowerQuery = query.toLowerCase();
+
+      const isMatch = lowerPath.includes(lowerQuery);
+      const hasSub = node.sub && Object.keys(node.sub).length > 0;
+
+      let childrenMatch = false;
+      if (hasSub) childrenMatch = checkDeepMatch(node.sub, lowerQuery);
+
+      if (isMatch || childrenMatch) {
+        flatItems.push({
+          key: key,
+          path: nextPath,
+          data: node,
+          level: level,
+          hasSub: hasSub,
+          type: type,
+          expanded: true,
+        });
+        if (hasSub) collectMatches(node.sub, nextPath, level + 1);
+      }
+    });
+  }
+
+  collectMatches(nodes, path, 0);
+
+  // FIX: Container is already in DOM (passed from listener), just clear it
+  container.innerHTML = "";
+
+  if (flatItems.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="padding: 6px 12px;">No matching results</div>`;
+    return null;
+  }
+
+  // allowing the internal row.onclick to work
+  // This covers the logic inside both renderFilteredTree and the search-input listeners
+  // --- FIX FOR DESKTOP SEARCH RENDERER ---
+  const scroller = new VirtualScroller(
+    container,
+    branchItems,
+    44,
+    (row, item) => {
+      row.style.paddingLeft = `${16 + item.level * 20}px`;
+
+      // --- FORCE DATASET ATTACHMENT ---
+      row._item = item;
+      row.dataset.path = item.path;
+      row.dataset.type = item.type;
+      row.dataset.hasSub = item.hasSub;
+      row.classList.add("virtual-search-result");
+
+      let labelHTML = escapeHTML(item.key);
+      if (item.isMatch) {
+        const idx = item.key.toLowerCase().indexOf(query);
+        labelHTML =
+          item.key.substring(0, idx) +
+          `<b>${item.key.substring(idx, idx + query.length)}</b>` +
+          item.key.substring(idx + query.length);
+        row.classList.add("search-leaf-match");
+      }
+
+      row.innerHTML = `
+        <div class="row-icon ${item.hasSub ? "expanded" : "leaf"}">${item.hasSub ? "▶" : "●"}</div>
+        <div class="row-label">${labelHTML}</div>
+    `;
+
+      // Visual selection sync
+      if (
+        state.focusedRow &&
+        state.focusedRow.path === item.path &&
+        state.focusedRow.type === item.type
+      ) {
+        row.classList.add("selected");
+      }
+    },
+    (ev, item, row) => {
+      // Click handler
+      selectNode(row, item.path, item.data, item.type, null, item.hasSub);
+    },
+  );
+
+  return scroller;
+}
+
+function checkDeepMatch(sub, query) {
+  if (!sub) return false;
+  return Object.keys(sub).some(
+    (k) => k.toLowerCase().includes(query) || checkDeepMatch(sub[k].sub, query),
+  );
+}
+// --- RESTORED SEARCH LISTENER ---
+// Replace the search-input 'input' listener with this:
+// --- UPDATED SEARCH LOGIC ---
+
+document.getElementById("search-input").addEventListener("input", (e) => {
+  const query = e.target.value.toLowerCase();
+  const root = document.getElementById("registry-root");
+
+  state.searchMatchIndex = -1;
+  state.searchMasterIndex = [];
+
+  if (!query) {
+    root.innerHTML = "";
+    renderRegistry(state.data);
+    return;
+  }
+
+  state.activeScrollers = [];
+
+  root.innerHTML = "";
+  const labels = { options: "Nix Options", pkgs: "Packages" };
+
+  ["options", "pkgs"].forEach((catKey) => {
+    if (!state.data[catKey]) return;
+
+    const branchItems = getSearchTreeItems(state.data[catKey], catKey, query);
+
+    if (branchItems.length > 0) {
+      const title = document.createElement("div");
+      title.className = "adw-group-title";
+      title.textContent = labels[catKey];
+      root.appendChild(title);
+
+      const container = document.createElement("div");
+      container.className = "tree-root";
+      root.appendChild(container);
+
+      const scroller = new VirtualScroller(
+        container,
+        branchItems,
+        44,
+        (row, item) => {
+          row.style.paddingLeft = `${16 + item.level * 20}px`;
+
+          row._item = item;
+          row.dataset.path = item.path;
+          row.dataset.type = item.type;
+          row.dataset.hasSub = item.hasSub;
+
+          let labelHTML = escapeHTML(item.key);
+          if (item.isMatch) {
+            const idx = item.key.toLowerCase().indexOf(query);
+            labelHTML =
+              item.key.substring(0, idx) +
+              `<b>${item.key.substring(idx, idx + query.length)}</b>` +
+              item.key.substring(idx + query.length);
+            row.classList.add("search-leaf-match");
+          }
+
+          row.innerHTML = `
+                    <div class="row-icon ${item.hasSub ? "expanded" : "leaf"}">${item.hasSub ? "▶" : "●"}</div>
+                    <div class="row-label">${labelHTML}</div>
+                `;
+
+          // Single Selection Highlight Fix
+          if (
+            state.focusedRow &&
+            state.focusedRow.path === item.path &&
+            state.focusedRow.type === item.type
+          ) {
+            row.classList.add("selected");
+          } else {
+            row.classList.remove("selected");
+          }
+        },
+        (ev, item, row) => {
+          selectNode(row, item.path, item.data, item.type, null, item.hasSub);
+        },
+      );
+      state.activeScrollers.push({ scroller, type: catKey });
+
+      // Only add the actual matches (not the parents) to the keyboard cycle index
+      branchItems.forEach((m) => {
+        if (m.isMatch) state.searchMasterIndex.push({ item: m, scroller });
+      });
+    }
+  });
+});
+
+// --- UPDATED NAVIGATION LOGIC ---
+
+window.cycleSearchMatches = (direction = 1) => {
+  if (!state.searchMasterIndex || state.searchMasterIndex.length === 0) return;
+
+  // 1. Calculate New Index
+  state.searchMatchIndex =
+    (state.searchMatchIndex + direction + state.searchMasterIndex.length) %
+    state.searchMasterIndex.length;
+  const { item, scroller } = state.searchMasterIndex[state.searchMatchIndex];
+
+  // 2. Identify the node in the virtual list
+  const itemIdx = scroller.items.findIndex((i) => i.path === item.path);
+
+  // 3. Update Sidebar immediately (even before scroll)
+  const node = resolveNode(state.data, item.type, item.path);
+  state.focusedRow = { path: item.path, type: item.type, node: node, hasSub: item.hasSub };
+  openInspector(item.path, node ? node.meta : null, item.type);
+  addToRecents(item.path, item.type);
+  updateBreadcrumbs(item.path, item.type);
+
+  // 4. Perform Virtual Scroll
+  scroller.scrollToIndex(itemIdx);
+
+  // 5. Force UI Sync
+  state.activeScrollers.forEach((s) => s.scroller.renderChunk());
+
+  // 6. HARDENED SELECTION (The "100% Fix")
+  // We retry looking for the DOM element because VirtualScroller is asynchronous
+  let attempts = 0;
+  const findAndSelect = () => {
+    const row = document.querySelector(`.virtual-row[data-path="${CSS.escape(item.path)}"]`);
+    if (row) {
+      // Found it! Apply visual selection and smart scroll
+      document.querySelectorAll(".selected").forEach((r) => r.classList.remove("selected"));
+      row.classList.add("selected");
+      state.focusedRow.el = row;
+      window.smartScroll(row);
+    } else if (attempts < 10) {
+      attempts++;
+      requestAnimationFrame(findAndSelect);
+    }
+  };
+  findAndSelect();
+};
+
+// --- UPDATED SELECT NODE (Core Fix) ---
+function selectNode(rowEl, path, node, type, wrapper, hasSub) {
+  // 1. Remove selection from any standard DOM rows
+  document.querySelectorAll(".tree-row.selected").forEach((r) => r.classList.remove("selected"));
+
+  // 2. Set the global focused state
+  state.focusedRow = { el: rowEl, path, node, type, wrapper, hasSub };
+
+  // 3. Force re-render of all virtual lists to sync the 'selected' class
+  if (state.activeScrollers) state.activeScrollers.forEach((s) => s.scroller.renderChunk());
+  if (state.searchMasterIndex) {
+    const uniqueScrollers = [...new Set(state.searchMasterIndex.map((m) => m.scroller))];
+    uniqueScrollers.forEach((s) => s.renderChunk());
+  }
+
+  // 4. Update UI
+  addToRecents(path, type);
+  openInspector(path, node ? node.meta : null, type);
+  updateBreadcrumbs(path, type);
+  if (rowEl) rowEl.classList.add("selected");
+}
+document.getElementById("search-input-mobile").addEventListener("input", (e) => {
+  const query = e.target.value.toLowerCase();
+  const root = document.getElementById("registry-root");
+
+  // 1. If search is empty, show default full view
+  if (!query) {
+    root.innerHTML = "";
+    renderRegistry(state.data);
+    return;
+  }
+
+  root.innerHTML = ""; // Clear for search results
+
+  // Label mapping for nicer headers
+  const labels = { options: "Nix Options", pkgs: "Packages", maintainers: "Maintainers" };
+
+  ["options", "pkgs", "maintainers"].forEach((catKey) => {
+    if (!state.data[catKey]) return;
+
+    // Create Title
+    const catTitle = document.createElement("div");
+    catTitle.className = "adw-group-title";
+    catTitle.textContent = labels[catKey] || catKey;
+    root.appendChild(catTitle);
+
+    // 2. Handle Maintainers (Chips)
+    if (catKey === "maintainers") {
+      const filtered = {};
+      Object.keys(state.data[catKey]).forEach((k) => {
+        if (k.toLowerCase().includes(query)) filtered[k] = state.data[catKey][k];
+      });
+
+      const container = document.createElement("div");
+      container.className = "chip-grid";
+
+      Object.keys(filtered)
+        .sort()
+        .forEach((key) => {
+          const chip = document.createElement("div");
+          chip.className = "maintainer-chip";
+          chip.textContent = filtered[key].name || key;
+          chip.onclick = (e) => showMaintainerPopup(key, filtered[key], e.currentTarget);
+          container.appendChild(chip);
+        });
+      root.appendChild(container);
+    }
+    // 3. Handle Trees (Options/Pkgs)
+    else {
+      const container = document.createElement("div");
+      container.className = "tree-root";
+      // Calls the existing renderFilteredTree function in your file
+      renderFilteredTree(state.data[catKey], container, "", catKey, query);
+      root.appendChild(container);
+    }
+  });
+});
+
+window.navigateToPath = async (path, type) => {
+  if (!path && !type) {
+    try {
+      history.replaceState(null, null, " ");
+    } catch (e) {}
+    document.querySelectorAll(".tree-row.selected").forEach((r) => r.classList.remove("selected"));
+    state.focusedRow = null;
+    updateBreadcrumbs("", "");
+
+    let recentHtml = "";
+    if (state.recents && state.recents.length > 0) {
+      recentHtml = `<div class="adw-group-title" style="margin-left:0; text-align:left;">Recent</div><div class="adw-group">`;
+      state.recents.forEach((r) => {
+        const [t, p] = r.split(":");
+        recentHtml += `<div class="adw-row" style="cursor:pointer" onclick="navigateToPath('${p}', '${t}')"><span style="font-weight:600; font-size:0.9em">${escapeHTML(p)}</span></div>`;
+      });
+      recentHtml += `</div>`;
+    }
+
+    document.getElementById("sidebar-body").innerHTML = `
+            <div style="padding: 40px 0; text-align: center; color: var(--dim-label);">
+                <div style="margin-bottom: 16px; opacity: 0.1">
+                    <svg width="80" height="80" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                </div>
+                <div style="font-weight: 700; margin-bottom: 8px;">ZenPkgs Explorer</div>
+                <div style="font-size: 0.9rem; margin-bottom: 32px;">Select an option to view details.</div>
+                
+                <!-- NEWS PREVIEW INJECTION POINT -->
+                <div id="start-news-preview"></div>
+
+                <div style="font-size: 0.75rem; margin-top: 24px; color: var(--secondary-label); padding: 0 20px;">
+                    <code>${window.formatKeybind(state.keybinds.search)}</code> to search<br>
+                    <code>${window.formatKeybind(state.keybinds.up)}/${window.formatKeybind(state.keybinds.down)}</code> to navigate
+                </div>
+                <div style="text-align:left; margin-top:32px; padding: 0 20px;">
+                    ${recentHtml}
+                </div>
+            </div>
+        `;
+
+    // Trigger fetch in preview mode (true) after render
+    // This will populate the #start-news-preview div we just added
+    setTimeout(() => fetchNews(true), 10);
+    setTimeout(() => {
+      state.suppressSheet = false;
+    }, 200);
+
+    return;
+  }
+
+  const parts = path.split(".");
+  let currentPath = "";
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    currentPath = i === 0 ? part : `${currentPath}.${part}`;
+
+    const safePath = CSS.escape(currentPath);
+
+    const row = document.querySelector(`.tree-row[data-path="${safePath}"][data-type="${type}"]`);
+
+    if (!row) {
+      console.warn(`Path segment not found: ${currentPath}`);
+      return;
+    }
+
+    if (i === parts.length - 1) {
+      const hasSub = row.dataset.hasSub === "true";
+      row.scrollIntoView({ behavior: "auto", block: "center" });
+      selectNode(row, currentPath, null, type, row.closest(".tree-node-wrapper"), hasSub);
+    } else {
+      const wrapper = row.closest(".tree-node-wrapper");
+      const childrenWrapper = wrapper.querySelector(".tree-children-wrapper");
+      const childrenContainer = wrapper.querySelector(".tree-children");
+
+      if (
+        !childrenWrapper ||
+        !childrenWrapper.classList.contains("open") ||
+        !childrenContainer.hasChildNodes()
+      ) {
+        row.click();
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+    }
+  }
+};
+
+// --- GEMINI API INTEGRATION ---
+async function callGeminiAPI(prompt) {
+  let apiKey = state.geminiKey;
+
+  if (!apiKey) {
+    const envKey = "";
+    if (envKey) apiKey = envKey;
+  }
+
+  if (!apiKey) throw new Error("API Key missing. Please set it in Settings.");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+  const payload = { contents: [{ parts: [{ text: prompt }] }] };
+
+  const delays = [1000, 2000, 4000, 8000, 16000];
+  for (let i = 0; i <= 5; i++) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 && i < 5) {
+          await new Promise((r) => setTimeout(r, delays[i]));
+          continue;
+        }
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+    } catch (e) {
+      if (i === 5) throw e;
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+  }
+}
+
+async function fetchSourceFile(position) {
+  if (!position || !state.ghToken) return null;
+  const cleanPath = position.split(":")[0];
+  try {
+    const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents/${cleanPath}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${state.ghToken}`,
+        Accept: "application/vnd.github.v3.raw",
+      },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch (e) {
+    console.warn("Failed to fetch source:", e);
+    return null;
+  }
+}
+
+async function askGemini(path, type) {
+  const area = document.getElementById("ai-content-area");
+  const textEl = document.getElementById("ai-response-text");
+  const container = document.getElementById("ai-container-group");
+
+  const cacheKey = `ai_${path}_${type}_v2`;
+  const cachedResponse = await aiStore.getItem(cacheKey);
+
+  area.style.display = "block";
+
+  if (cachedResponse) {
+    textEl.innerHTML = marked.parse(cachedResponse);
+    textEl.innerHTML += `<div style="margin-top:12px; font-size:0.65rem; color:var(--dim-label); border-top:1px solid var(--border-color); padding-top:4px;">Fetched from local cache</div>`;
+    return;
+  }
+
+  container.classList.add("ai-gradient-border");
+  textEl.innerHTML =
+    '<div style="display:flex; align-items:center; gap:12px; color:var(--dim-label)"><div class="spinner" style="width:20px; height:20px; border-width:2px; margin:0"></div>Analyzing registry & source...</div>';
+
+  window.setLoading(true);
+
+  const meta = state.currentMeta || {};
+  const context = type === "options" ? "NixOS Option" : "Nix Package";
+
+  let sourceCode = "";
+  if (meta.position) {
+    textEl.innerHTML =
+      '<div style="display:flex; align-items:center; gap:12px; color:var(--dim-label)"><div class="spinner" style="width:20px; height:20px; border-width:2px; margin:0"></div>Fetching source code from GitHub...</div>';
+    const code = await fetchSourceFile(meta.position);
+    if (code) {
+      const truncated = code.length > 20000 ? code.substring(0, 20000) + "\n... (truncated)" : code;
+      sourceCode = `\n\nReference Source Code (${meta.position}):\n\`\`\`nix\n${truncated}\n\`\`\``;
+    }
+  }
+
+  const request =
+    type === "options"
+      ? "Explain what this option controls and provide a usage example in `configuration.nix`."
+      : "Explain what this package does in simple terms and provide a usage example (e.g. `environment.systemPackages` or `nix-shell`).";
+
+  const prompt = `You are a helpful ZenOS (a specialized NixOS distribution) expert assistant.
+            Repository: https://github.com/${CONFIG.OWNER}/${CONFIG.REPO}
+            Item: ${path} (${context})
+            Summary: ${meta.summary || "N/A"}
+            Details: ${meta.description || "N/A"}
+            
+            ${sourceCode}
+
+            Task: ${request}
+            
+            Format: Markdown. Keep it concise. Use set-based syntax for packages (e.g. system.packages = { category = { pkg; }; }). Instead of nix-shell, use zenos-shell, a wrapper for nix-shell.`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    await aiStore.setItem(cacheKey, text);
+    textEl.innerHTML = marked.parse(text);
+  } catch (e) {
+    textEl.innerHTML = `<span style="color:var(--accent-red)">Error: ${e.message}. Please try again later.</span>`;
+  } finally {
+    container.classList.remove("ai-gradient-border");
+    window.setLoading(false);
+  }
+}
+
+// --- INTERNAL LOGIC ---
+// Context-Aware Keydown
+document.addEventListener("keydown", (e) => {
+  const isInput =
+    e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable;
+
+  // 1. Command Palette Navigation (Always allow regardless of focus)
+  if (document.getElementById("modal-palette").classList.contains("visible")) {
+    const items = document.querySelectorAll(".command-item");
+    const current = document.querySelector(".command-item.active");
+    let idx = Array.from(items).indexOf(current);
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      idx = (idx + 1) % items.length;
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      idx = (idx - 1 + items.length) % items.length;
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (current) current.click();
+      return;
+    } else if (e.key === "Escape") {
+      window.toggleCommandPalette();
+      return;
+    }
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      items.forEach((i) => i.classList.remove("active"));
+      items[idx].classList.add("active");
+      items[idx].scrollIntoView({ block: "nearest" });
+    }
+    return;
+  }
+
+  // 2. Focus Logic: If user is typing, ignore global shortcuts UNLESS it's Escape or Enter
+  if (isInput) {
+    if (e.key === "Escape") {
+      e.target.blur();
+      document.getElementById("search-history").classList.remove("visible");
+      if (e.target.id === "sp-visual-view") {
+        document.getElementById("scratchpad-panel").classList.remove("visible");
+      }
+      if (e.target.id === "search-input" || e.target.id === "search-input-mobile") {
+        window.toggleSearch();
+      }
+    }
+
+    if (
+      e.key === "Enter" &&
+      (e.target.id === "search-input" || e.target.id === "search-input-mobile")
+    ) {
+      e.preventDefault();
+      addToSearchHistory(e.target.value);
+
+      // Updated check: use searchMasterIndex instead of searchScroller
+      if (state.searchMasterIndex && state.searchMasterIndex.length > 0) {
+        state.searchMatchIndex = 0;
+        const { item, scroller } = state.searchMasterIndex[0];
+
+        // 1. Scroll the specific category scroller to the top match
+        const itemIdx = scroller.items.findIndex((i) => i.path === item.path);
+        scroller.scrollToIndex(itemIdx);
+
+        // 2. Perform the selection (triggers inspector & breadcrumbs)
+        // Passing null for rowEl because virtual scroller handles the 'selected' class
+        selectNode(null, item.path, item.data, item.type, null, item.hasSub);
+
+        e.target.blur();
+      }
+    }
+    return;
+  }
+
+  // Global Shortcuts (Ctrl+K, P)
+  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "p")) {
+    e.preventDefault();
+    window.toggleCommandPalette();
+    return;
+  }
+
+  // Standard Tree Navigation Logic
+  let parts = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.altKey) parts.push("Alt");
+  if (e.metaKey) parts.push("Meta");
+
+  let key = e.key;
+  if (key === " ") key = "Space";
+  if (key.length === 1) key = key.toLowerCase();
+
+  parts.push(key);
+  const combo = parts.join("+");
+
+  const kb = state.keybinds;
+  const check = (setting) => setting === combo;
+
+  let matched = false;
+
+  if (check(kb.search)) {
+    e.preventDefault();
+    const searchBar =
+      window.innerWidth < 768
+        ? document.getElementById("search-bar-mobile")
+        : document.getElementById("search-bar");
+    const searchInput =
+      window.innerWidth < 768
+        ? document.getElementById("search-input-mobile")
+        : document.getElementById("search-input");
+    const isVisible = searchBar.classList.contains("visible");
+    const isFocused = document.activeElement === searchInput;
+
+    if (isVisible && !isFocused) {
+      searchInput.focus();
+      searchInput.select();
+      renderSearchHistory();
+    } else {
+      window.toggleSearch();
+    }
+    matched = true;
+  } else if (check(kb.copyId)) {
+    if (state.focusedRow) window.copyToClipboard(state.focusedRow.path);
+    matched = true;
+  } else if (check(kb.copyDesc)) {
+    const desc = document.getElementById("inspector-desc-text");
+    if (desc) window.copyToClipboard(desc.textContent);
+    matched = true;
+  } else if (check(kb.version)) {
+    window.toggleVersionDropdown();
+    matched = true;
+  } else if (check(kb.settings)) {
+    window.openModal("settings");
+    matched = true;
+  } else if (check(kb.about)) {
+    window.openModal("about");
+    matched = true;
+  } else if (check(kb.up)) {
+    e.preventDefault();
+    handleNav("up");
+    matched = true;
+  } else if (check(kb.down)) {
+    e.preventDefault();
+    handleNav("down");
+    matched = true;
+  } else if (check(kb.left)) {
+    e.preventDefault();
+    handleNav("left");
+    matched = true;
+  } else if (check(kb.right)) {
+    e.preventDefault();
+    handleNav("right");
+    matched = true;
+  } else if (check(kb.nextMatch)) {
+    e.preventDefault();
+    window.cycleSearchMatches(1);
+    matched = true;
+  } else if (check(kb.prevMatch)) {
+    e.preventDefault();
+    window.cycleSearchMatches(-1);
+    matched = true;
+  }
+
+  if (combo === (kb.clearSearch || "Escape")) {
+    const isSearchVisible =
+      window.innerWidth < 768
+        ? document.getElementById("search-bar-mobile").classList.contains("visible")
+        : document.getElementById("search-bar").classList.contains("visible");
+    if (isSearchVisible) {
+      e.preventDefault();
+      window.closeSearch();
+      return;
+    }
+  }
+
+  if (combo === "Escape") {
+    if (document.querySelector(".overlay-backdrop.visible")) {
+      document
+        .querySelectorAll(".overlay-backdrop.visible")
+        .forEach((el) => el.classList.remove("visible"));
+      return;
+    }
+    const vDrop = document.getElementById("version-dropdown");
+    if (vDrop.classList.contains("visible")) vDrop.classList.remove("visible");
+  }
+
+  // Inside keydown listener...
+  const searchActive = !!document.querySelector(".search-wrapper.visible");
+
+  // Only run buffer if not matched
+  if (!matched && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    keyBuffer.push(key);
+
+    clearTimeout(keyTimer);
+    keyTimer = setTimeout(() => {
+      keyBuffer = [];
+    }, state.comboTimeout);
+  }
+  const seq = keyBuffer.join(" ");
+
+  if (seq === kb.top) {
+    e.preventDefault();
+    if (searchActive && state.searchMasterIndex?.length > 0) {
+      // Force the index back to the first element
+      state.searchMatchIndex = -1;
+      window.cycleSearchMatches(1);
+    } else {
+      // Standard Tree: Find first visible row and pin to top
+      const rows = Array.from(document.querySelectorAll(".tree-row, .virtual-row")).filter((r) =>
+        isRowVisible(r),
+      );
+      if (rows.length > 0) window.selectAndScroll(rows[0]);
+    }
+    keyBuffer = [];
+  }
+
+  if (combo === kb.bottom) {
+    e.preventDefault();
+    if (searchActive && state.searchMasterIndex?.length > 0) {
+      // Force the index to the last element
+      state.searchMatchIndex = state.searchMasterIndex.length - 2;
+      window.cycleSearchMatches(1);
+    } else {
+      // Standard Tree: Find last visible row and pin to top
+      const rows = Array.from(document.querySelectorAll(".tree-row, .virtual-row")).filter((r) =>
+        isRowVisible(r),
+      );
+      if (rows.length > 0) window.selectAndScroll(rows[rows.length - 1]);
+    }
+    keyBuffer = [];
+  }
+});
+
+// Keybind Recording Logic
+const keyInputs = document.querySelectorAll(".keybind-input");
+let recordTimeout;
+let recordBuffer = [];
+let keyBuffer = [];
+let keyTimer = null;
+
+keyInputs.forEach((input) => {
+  input.addEventListener("keydown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+
+    let parts = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.altKey) parts.push("Alt");
+    if (e.metaKey) parts.push("Meta");
+
+    let key = e.key;
+    if (key === " ") key = "Space";
+    if (key.length === 1) key = key.toLowerCase();
+
+    parts.push(key);
+    const chord = parts.join("+");
+
+    if (parts.length > 1 && (e.ctrlKey || e.altKey || e.metaKey)) {
+      clearTimeout(recordTimeout);
+      recordBuffer = [];
+      input.value = chord;
+      state.keybinds[input.dataset.bind] = chord;
+      window.saveSettings();
+      input.blur();
+      showToast(`Bound to ${chord}`);
+      return;
+    }
+
+    recordBuffer.push(chord);
+    input.value = recordBuffer.join(" ") + " ...";
+
+    clearTimeout(recordTimeout);
+    recordTimeout = setTimeout(() => {
+      const finalBind = recordBuffer.join(" ");
+      input.value = finalBind;
+      state.keybinds[input.dataset.bind] = finalBind;
+      window.saveSettings();
+      input.blur();
+      showToast(`Bound to ${finalBind}`);
+      recordBuffer = [];
+    }, state.comboTimeout);
+  });
+});
+
+window.clearScratchpad = () => {
+  state.scratchpadConfig = "";
+  renderScratchpad();
+  saveSettings();
+};
+function updateBreadcrumbs(path, type) {
+  const container = document.getElementById("breadcrumbs");
+  const iconSvg = `<svg width="16" height="16" viewBox="0 0 16 16" fill="var(--dim-label)" xmlns="http://www.w3.org/2000/svg">
+                            <g clip-path="url(#clip0_272_121)"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.5 7C10.567 7 9 5.433 9 3.5C9 1.567 10.567 0 12.5 0C14.433 0 16 1.567 16 3.5C16 5.433 14.433 7 12.5 7ZM12.5 1.5C13.6046 1.5 14.5 2.39543 14.5 3.5C14.5 4.60457 13.6046 5.5 12.5 5.5C11.3954 5.5 10.5 4.60457 10.5 3.5C10.5 2.39543 11.3954 1.5 12.5 1.5Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M12.5 16C10.567 16 9 14.433 9 12.5C9 10.567 10.567 9 12.5 9C14.433 9 16 10.567 16 12.5C16 14.433 14.433 16 12.5 16ZM12.5 10.5C13.6046 10.5 14.5 11.3954 14.5 12.5C14.5 13.6046 13.6046 14.5 12.5 14.5C11.3954 14.5 10.5 13.6046 10.5 12.5C10.5 11.3954 11.3954 10.5 12.5 10.5Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M3.5 11.5C1.567 11.5 0 9.933 0 8C0 6.067 1.567 4.5 3.5 4.5C5.433 4.5 7 6.067 7 8C7 9.933 5.433 11.5 3.5 11.5ZM3.5 6C4.60457 6 5.5 6.89543 5.5 8C5.5 9.10457 4.60457 10 3.5 10C2.39543 10 1.5 9.10457 1.5 8C1.5 6.89543 2.39543 6 3.5 6Z" fill="currentColor"></path></g><defs><clipPath id="clip0_272_121"><rect width="16" height="16" fill="currentColor"></rect></clipPath></defs>
+                        </svg>`;
+
+  container.innerHTML = `<div class="crumb-btn" onclick="navigateToPath('', '')">${iconSvg}<span>zenpkgs</span></div>`;
+  if (!path) return;
+
+  container.innerHTML += `<span class="crumb-sep">›</span><div class="crumb-btn" onclick="navigateToPath('', '${type}')">${escapeHTML(type)}</div>`;
+
+  let currentAcc = [];
+  path.split(".").forEach((part, i, arr) => {
+    currentAcc.push(part);
+    const fullPath = currentAcc.join(".");
+    const activeClass = i === arr.length - 1 ? "active" : "";
+
+    container.innerHTML += `
+                    <span class="crumb-sep clickable" onclick="goToParent('${fullPath}', '${type}')">›</span>
+                    <div class="crumb-btn ${activeClass}" onclick="navigateToPath('${fullPath}', '${type}')">
+                        ${escapeHTML(part)}
+                    </div>`;
+  });
+  container.scrollLeft = container.scrollWidth;
+}
+
+window.handleLocalUpload = (input) => {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      state.data = data;
+      state.selectedVersion = "Local File";
+      renderRegistry(data);
+      updateVersionUI();
+      updateBreadcrumbs("", "");
+      navigateToPath(null, null);
+      updateOnlineStatus();
+      showToast("Local Configuration Loaded");
+      document.getElementById("version-dropdown").classList.remove("visible");
+    } catch (err) {
+      showToast("Error: Invalid JSON File");
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+  input.value = ""; // Reset
+};
+
+window.clearDataCache = async () => {
+  await dataStore.clear();
+  showToast("Cache cleared. Refreshing...");
+  setTimeout(() => location.reload(), 1000);
+};
+
+const LICENSE_FALLBACK = `
+# NAPALM License 2.0
+(Non Aggression Principle Anti-License Mandate)
+
+1.  **Freedom**: You are free to use, modify, and distribute this software for any purpose.
+2.  **Non-Aggression**: You may not use this software to initiate force, violence, or coercion against other individuals or their property.
+3.  **Liability**: The author is not liable for any damages arising from the use of this software.
+
+*Note: This is a local fallback.*
+        `;
+
+window.aboutNav = async (target) => {
+  const main = document.getElementById("about-main");
+  const legal = document.getElementById("about-legal");
+  const credits = document.getElementById("about-credits");
+
+  const title = document.getElementById("about-title");
+  const backBtn = document.getElementById("about-back-btn");
+  const win = document.getElementById("about-window");
+
+  [main, legal, credits].forEach((el) => {
+    if (!el) return;
+    el.classList.remove("active", "exit-left", "exit-right", "off-right", "off-left");
+  });
+
+  if (target === "main") {
+    main.classList.add("active");
+    legal.classList.add("off-right");
+    credits.classList.add("off-right");
+    title.textContent = "About";
+    backBtn.style.visibility = "hidden";
+    win.classList.remove("wide");
+  } else if (target === "legal" || target === "credits") {
+    main.classList.add("exit-left");
+    if (target === "legal") {
+      legal.classList.add("active");
+      credits.classList.add("off-right");
+      title.textContent = "NAP License";
+      if (!document.getElementById("legal-content").innerHTML) {
+        try {
+          const res = await fetch(
+            "https://raw.githubusercontent.com/negative-zero-inft/nap-license/master/LICENSE",
+          );
+          if (!res.ok) throw new Error("Fetch failed");
+          const text = await res.text();
+          document.getElementById("legal-content").innerHTML = marked.parse(text);
+          document.getElementById("legal-loader").style.display = "none";
+        } catch (e) {
+          document.getElementById("legal-loader").style.display = "none";
+          document.getElementById("legal-content").innerHTML = marked.parse(LICENSE_FALLBACK);
+        }
+      }
+    } else {
+      credits.classList.add("active");
+      legal.classList.add("off-right");
+      title.textContent = "Credits";
+    }
+    backBtn.style.visibility = "visible";
+    win.classList.add("wide");
+  }
+};
+
+window.showMaintainerPopup = (id, data, targetEl) => {
+  const popup = document.getElementById("maintainer-popup");
+  const arrow = document.getElementById("mp-arrow");
+  const content = document.getElementById("mp-content");
+
+  let html = `
+                <div style="border-bottom:1px solid var(--border-color); padding-bottom:8px;  display:flex; justify-content:space-between; align-items:center">
+                    <span style="font-weight:800; font-size:1rem">${data.name || id}</span>
+                   ${data.role ? `<span style="font-size:0.65rem; font-weight:800; background:color-mix(in srgb, var(--accent-bg) 20%, var(--bg-modal)); color:var(--link-color); padding:2px 6px; border-radius:4px">${data.role}</span>` : ""} 
+                </div>
+            `;
+  Object.keys(data).forEach((k) => {
+    if (k !== "name" && k !== "role") {
+      html += `
+                        <div class="maintainer-row" style="display:flex; justify-content:space-between; margin-bottom:4px; flex-direction:column; gap:4px;">
+                            <div class="maintainer-label" style="text-align:left">${k}</div>
+                            <div class="maintainer-value" >${data[k]}</div>
+                        </div>
+                    `;
+    }
+  });
+  content.innerHTML = html;
+
+  const rect = targetEl.getBoundingClientRect();
+  const popHeight = popup.offsetHeight;
+  const popWidth = 240;
+
+  let top = rect.top - popHeight - 12;
+  let left = rect.left + rect.width / 2 - popWidth / 2;
+  let arrowDir = "down";
+
+  if (top < 10) {
+    top = rect.bottom + 12;
+    arrow.className = "popup-arrow arrow-up";
+    arrowDir = "up";
+  } else {
+    arrow.className = "popup-arrow arrow-down";
+    arrowDir = "down";
+  }
+
+  if (left + popWidth > window.innerWidth) {
+    left = window.innerWidth - popWidth - 20;
+  }
+  if (left < 10) left = 10;
+
+  popup.style.top = top + "px";
+  popup.style.left = left + "px";
+
+  const arrowLeft = rect.left + rect.width / 2 - left;
+  arrow.style.left = `${arrowLeft}px`;
+  arrow.style.transform = "translateX(-50%)";
+
+  const originY = arrowDir === "up" ? "0%" : "100%";
+  popup.style.transformOrigin = `${arrowLeft}px ${originY}`;
+
+  if (arrowDir === "up") {
+    popup.style.setProperty("--pop-start", "scale(0.9) translateY(-10px)");
+  } else {
+    popup.style.setProperty("--pop-start", "scale(0.9) translateY(10px)");
+  }
+
+  popup.classList.add("visible");
+};
+
+// Helper: Iterative flatten to ensure reliable deep traversal without recursion limits
+function flattenTreeIterative(sourceData, type) {
+  const result = [];
+  const stack = [];
+
+  if (!sourceData) return [];
+
+  // 1. Push root items to stack in reverse order (so they pop in A-Z order)
+  const rootKeys = Object.keys(sourceData).sort();
+  for (let i = rootKeys.length - 1; i >= 0; i--) {
+    const key = rootKeys[i];
+    stack.push({
+      key: key,
+      node: sourceData[key],
+      pathPrefix: "",
+      level: 0,
+    });
+  }
+
+  while (stack.length > 0) {
+    const { key, node, pathPrefix, level } = stack.pop();
+
+    // Safety check to prevent crashing on malformed data
+    if (!node) continue;
+
+    // Robust check for sub-nodes
+    const hasSub = node.sub && typeof node.sub === "object" && Object.keys(node.sub).length > 0;
+    const path = pathPrefix ? `${pathPrefix}.${key}` : key;
+
+    const item = {
+      key: key,
+      data: node,
+      path: path,
+      type: type,
+      level: level,
+      expanded: hasSub, // Force expanded state
+      hasSub: hasSub,
+      parentId: pathPrefix,
+    };
+
+    result.push(item);
+
+    if (hasSub) {
+      // Push children to stack in reverse order
+      const subKeys = Object.keys(node.sub).sort();
+      for (let i = subKeys.length - 1; i >= 0; i--) {
+        const subKey = subKeys[i];
+        stack.push({
+          key: subKey,
+          node: node.sub[subKey],
+          pathPrefix: path,
+          level: level + 1,
+        });
+      }
+    }
+  }
+  return result;
+}
+
+window.expandTree = window.unwrapTree = () => {
+  let processedViaVirtual = false;
+
+  // 1. Handle Virtual Scrollers (Large Lists)
+  if (state.activeScrollers && state.activeScrollers.length > 0) {
+    showToast("Unwrapping tree...", false);
+
+    setTimeout(() => {
+      let totalNodes = 0;
+      state.activeScrollers.forEach(({ scroller, type }) => {
+        const sourceData = state.data[type];
+        if (sourceData) {
+          const fullyExpanded = flattenTreeIterative(sourceData, type);
+          scroller.setItems(fullyExpanded);
+          totalNodes += fullyExpanded.length;
+        }
+      });
+      showToast(`Tree expanded (${totalNodes} nodes)`);
+    }, 50);
+    processedViaVirtual = true;
+  }
+
+  // 2. Handle Standard DOM Trees (Small Lists)
+  // Identify standard categories that are NOT virtualized
+  const virtualTypes = state.activeScrollers ? state.activeScrollers.map((s) => s.type) : [];
+  const standardCategories = ["options", "pkgs"].filter((t) => !virtualTypes.includes(t));
+
+  standardCategories.forEach((type) => {
+    if (!state.data[type]) return;
+
+    // Find the container in the DOM
+    const row = document.querySelector(`.tree-row[data-type="${type}"]`);
+    if (row) {
+      const container = row.closest(".tree-root");
+      if (container) {
+        // Re-render with forceExpand = true
+        container.innerHTML = "";
+        renderRecursiveTree(state.data[type], container, "", type, true);
+      }
+    }
+  });
+
+  // 3. Handle Already-Rendered Nodes (e.g. Search Results)
+  // Search results are not lazy, so we can just open them via CSS if they were manually collapsed
+  document.querySelectorAll(".tree-node-wrapper").forEach((wrapper) => {
+    const anim = wrapper.querySelector(".tree-children-wrapper");
+    const icon = wrapper.querySelector(".row-icon");
+    if (anim && !anim.classList.contains("open")) {
+      // Only open if it has content (prevents opening lazy nodes that we missed)
+      const children = wrapper.querySelector(".tree-children");
+      if (children && children.hasChildNodes()) {
+        anim.classList.add("open");
+        if (icon) icon.classList.add("expanded");
+      }
+    }
+  });
+
+  if (!processedViaVirtual) showToast("Tree expanded");
+};
+
+window.collapseTree = () => {
+  // 1. Handle Standard DOM Trees
+  document
+    .querySelectorAll(".tree-children-wrapper.open")
+    .forEach((el) => el.classList.remove("open"));
+  document.querySelectorAll(".row-icon.expanded").forEach((el) => el.classList.remove("expanded"));
+
+  // 2. Handle Virtual Scrollers
+  if (state.activeScrollers && state.activeScrollers.length > 0) {
+    state.activeScrollers.forEach(({ scroller }) => {
+      // Filter down to just the root items (Level 0) and collapse them
+      // We generate fresh root items from source to ensure clean state
+      const type = scroller.items[0]?.type;
+      if (type && state.data[type]) {
+        const sourceData = state.data[type];
+        const keys = Object.keys(sourceData).sort();
+        const rootItems = keys.map((k) => ({
+          key: k,
+          data: sourceData[k],
+          path: k,
+          type: type,
+          level: 0,
+          expanded: false,
+          hasSub: sourceData[k].sub && Object.keys(sourceData[k].sub).length > 0,
+        }));
+        scroller.setItems(rootItems);
+      }
+    });
+  }
+
+  showToast("Tree collapsed");
+};
+
+const COMMANDS = [
+  {
+    id: "settings",
+    bindKey: "settings",
+    label: "Open Settings",
+    shortcut: "Ctrl+.",
+    action: () => window.openModal("settings"),
+  },
+  {
+    id: "keybinds",
+    label: "View Keybinds",
+    shortcut: "Ctrl+/",
+    action: () => window.openModal("keybinds"),
+  },
+  {
+    id: "about",
+    bindKey: "about",
+    label: "Open About",
+    shortcut: "Ctrl+Shift+A",
+    action: () => window.openModal("about"),
+  },
+  { id: "theme", label: "Toggle Theme", action: () => window.toggleTheme() },
+  { id: "motion", label: "Toggle Reduced Motion", action: () => window.toggleReducedMotion() },
+  { id: "scratchpad", label: "Toggle Scratchpad", action: () => window.toggleScratchpad() },
+  {
+    id: "add_scratchpad",
+    label: "Add to Scratchpad",
+    action: () => {
+      if (state.focusedRow) window.addToScratchpad(state.focusedRow.path, state.focusedRow.type);
+    },
+  },
+  { id: "cache", label: "Clear Registry Cache", action: () => window.clearDataCache() },
+  { id: "random", label: "Surprise Me (Random Package)", action: () => window.navigateRandom() },
+  {
+    id: "github",
+    label: "Open GitHub Repo",
+    action: () => window.open("https://github.com/" + CONFIG.OWNER + "/" + CONFIG.REPO, "_blank"),
+  },
+  { id: "collapse", label: "Collapse Tree", action: () => window.collapseTree() },
+  { id: "expand", label: "Unwrap Tree (Expand All)", action: () => window.expandTree() },
+  {
+    id: "fav",
+    label: "Toggle Favorite",
+    action: () => {
+      if (state.focusedRow) window.toggleFavorite(state.focusedRow.path, state.focusedRow.type);
+    },
+  },
+  {
+    id: "version",
+    bindKey: "version",
+    label: "Change Version",
+    shortcut: "Ctrl+,",
+    action: () => window.toggleVersionDropdown(),
+  },
+  {
+    id: "copy_id",
+    bindKey: "copyId",
+    label: "Copy Identifier",
+    shortcut: "Ctrl+C",
+    action: () => {
+      if (state.focusedRow) window.copyToClipboard(state.focusedRow.path);
+    },
+  },
+  {
+    id: "copy_desc",
+    bindKey: "copyDesc",
+    label: "Copy Description",
+    shortcut: "Ctrl+Shift+C",
+    action: () => {
+      if (state.currentMeta?.description) window.copyToClipboard(state.currentMeta.description);
+    },
+  },
+  {
+    id: "copy_doc",
+    label: "Copy Documentation",
+    action: () => {
+      if (state.currentMeta?.longDescription)
+        window.copyToClipboard(state.currentMeta.longDescription);
+    },
+  },
+  {
+    id: "cmds",
+    label: "Command List",
+    shortcut: "Ctrl+K",
+    action: () => {
+      document.getElementById("cmd-input").value = "";
+      renderCommandList(COMMANDS);
+    },
+  },
+];
+
+window.toggleCommandPalette = () => {
+  document.getElementById("menu-popover").classList.remove("visible");
+  const el = document.getElementById("modal-palette");
+  const visible = el.classList.toggle("visible");
+  if (visible) {
+    document.getElementById("cmd-input").value = "";
+    setTimeout(() => document.getElementById("cmd-input").focus(), 50);
+    renderCommandList(COMMANDS);
+  } else {
+    document.getElementById("cmd-input").blur();
+  }
+};
+
+function renderCommandList(items, selectedIndex = 0) {
+  const list = document.getElementById("cmd-list");
+  list.innerHTML = "";
+
+  const query = document.getElementById("cmd-input").value.toLowerCase();
+  const filteredItems = items.filter((c) => c.label.toLowerCase().includes(query));
+
+  if (filteredItems.length === 0) {
+    list.innerHTML = `<div style="padding:24px; text-align:center; color:var(--dim-label); font-weight:500;">No command found.</div>`;
+    return;
+  }
+
+  let finalDisplay = [];
+
+  const historyItems = filteredItems
+    .filter((i) => state.commandHistory.includes(i.id))
+    .sort((a, b) => state.commandHistory.indexOf(a.id) - state.commandHistory.indexOf(b.id))
+    .slice(0, 5);
+
+  const otherItems = filteredItems
+    .filter((i) => !historyItems.includes(i))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  if (historyItems.length > 0 && otherItems.length > 0 && !query) {
+    finalDisplay = [...historyItems, { separator: true, label: "All Commands" }, ...otherItems];
+  } else {
+    finalDisplay = [...historyItems, ...otherItems];
+  }
+
+  finalDisplay.forEach((cmd, idx) => {
+    if (cmd.separator) {
+      const sep = document.createElement("div");
+      sep.style.cssText =
+        "font-size:0.75rem; font-weight:800; color:var(--dim-label); margin:12px 12px 4px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border-color); padding-bottom:4px;";
+      sep.textContent = cmd.label;
+      list.appendChild(sep);
+      return;
+    }
+
+    const isSelected =
+      idx === selectedIndex ||
+      (finalDisplay[selectedIndex]?.separator && idx === selectedIndex + 1);
+
+    let rawKey =
+      cmd.bindKey && state.keybinds[cmd.bindKey] ? state.keybinds[cmd.bindKey] : cmd.shortcut;
+    const displayKey = window.formatKeybind(rawKey);
+
+    const div = document.createElement("div");
+    div.className = `command-item ${isSelected ? "active" : ""}`;
+    div.innerHTML = `<span>${cmd.label}</span>${displayKey ? `<span class="command-shortcut">${displayKey}</span>` : ""}`;
+
+    div.onclick = () => {
+      state.commandHistory = [cmd.id, ...state.commandHistory.filter((id) => id !== cmd.id)];
+      saveSettings();
+
+      window.toggleCommandPalette();
+      cmd.action();
+    };
+    list.appendChild(div);
+  });
+}
+
+document.getElementById("cmd-input").addEventListener("input", (e) => {
+  const term = e.target.value.toLowerCase();
+  const filtered = COMMANDS.filter((c) => c.label.toLowerCase().includes(term));
+  renderCommandList(filtered);
+});
+
+// --- SEARCH HISTORY LOGIC ---
+function renderSearchHistory() {
+  const container = document.getElementById("search-history");
+  container.innerHTML = "";
+  if (state.searchHistory.length === 0) {
+    container.classList.remove("visible");
+    return;
+  }
+  state.searchHistory.forEach((term) => {
+    const item = document.createElement("div");
+    item.className = "history-item";
+    item.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>${escapeHTML(term)}`;
+    item.onclick = () => {
+      const input =
+        window.innerWidth < 768
+          ? document.getElementById("search-input-mobile")
+          : document.getElementById("search-input");
+      input.value = term;
+      input.dispatchEvent(new Event("input"));
+      container.classList.remove("visible");
+    };
+    container.appendChild(item);
+  });
+  container.classList.add("visible");
+}
+
+function addToSearchHistory(term) {
+  if (!term) return;
+  state.searchHistory = state.searchHistory.filter((t) => t !== term);
+  state.searchHistory.unshift(term);
+  if (state.searchHistory.length > 5) state.searchHistory.pop();
+  settingsStore.setItem("user_history", {
+    favorites: state.favorites,
+    recents: state.recents,
+    searchHistory: state.searchHistory,
+    scratchpadConfig: state.scratchpadConfig,
+  });
+}
+
+// --- RANDOM NAVIGATION ---
+window.navigateRandom = () => {
+  if (!state.data) return;
+  const keys = [];
+  // Flatten options and pkgs
+  ["options", "pkgs"].forEach((type) => {
+    if (state.data[type]) {
+      const traverse = (node, path) => {
+        Object.keys(node).forEach((k) => {
+          const currentPath = path ? `${path}.${k}` : k;
+          if (node[k].sub && Object.keys(node[k].sub).length > 0) {
+            traverse(node[k].sub, currentPath);
+          } else {
+            keys.push({ path: currentPath, type });
+          }
+        });
+      };
+      traverse(state.data[type], "");
+    }
+  });
+  if (keys.length > 0) {
+    const rand = keys[Math.floor(Math.random() * keys.length)];
+    window.navigateToPath(rand.path, rand.type);
+    showToast(`Random: ${rand.path}`);
+  }
+};
+
+window.goToParent = (path, type) => {
+  if (!path.includes(".")) {
+    window.navigateToPath("", type);
+  } else {
+    const parent = path.substring(0, path.lastIndexOf("."));
+    window.navigateToPath(parent, type);
+  }
+};
+
+// --- UTILS ---
+// --- UPDATED NAVIGATION & SCROLLING LOGIC ---
+
+window.smartScroll = (el) => {
+  if (!el) return;
+
+  const scroller =
+    el.closest(".main-content, .sidebar-content") || document.querySelector(".main-content");
+  if (!scroller) return;
+
+  const rect = el.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
+
+  // The "Dead Zone" boundary (50% of the scroller's visible height)
+  const midPoint = scrollerRect.top + scrollerRect.height * 0.5;
+
+  // If the element is below the midpoint
+  if (rect.top > midPoint) {
+    // Calculate the distance needed to move the element to the midpoint
+    const diff = rect.top - midPoint;
+    scroller.scrollBy({
+      top: diff,
+      behavior: "smooth",
+    });
+  }
+  // If the element is above the top of the viewport (scrolling up)
+  else {
+    const superTop = rect.top - 80;
+    scroller.scrollBy({ behavior: "smooth", top: superTop });
+  }
+};
+
+// Update selectAndScroll to use the new engine
+function selectAndScroll(el) {
+  if (!el) return;
+  const path = el.dataset.path || (el._item ? el._item.path : null);
+  const type = el.dataset.type || (el._item ? el._item.type : null);
+  const hasSub = el.dataset.hasSub === "true" || (el._item ? el._item.hasSub : false);
+
+  if (!path || !type) return;
+
+  const node = resolveNode(state.data, type, path);
+  selectNode(el, path, node, type, el.closest(".tree-node-wrapper"), hasSub);
+
+  smartScroll(el);
+}
+
+window.selectVirtualItem = (scroller, index) => {
+  const item = scroller.items[index];
+  if (!item) return;
+
+  const node = resolveNode(state.data, item.type, item.path);
+
+  // Update state FIRST so renderChunk() knows which row to highlight
+  state.focusedRow = {
+    path: item.path,
+    type: item.type,
+    node: node,
+    hasSub: item.hasSub,
+    el: null, // Will be populated after render
+  };
+
+  // UI Updates
+  openInspector(item.path, node ? node.meta : null, item.type);
+  updateBreadcrumbs(item.path, item.type);
+
+  // Force the scroller to move and RE-RENDER the divs
+  scroller.scrollToIndex(index);
+  scroller.renderChunk();
+
+  // Find the newly rendered div to keep the 'el' reference fresh
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`.virtual-row[data-path="${CSS.escape(item.path)}"]`);
+    if (row) {
+      state.focusedRow.el = row;
+      // Remove old selections and add new one
+      document
+        .querySelectorAll(".virtual-row.selected")
+        .forEach((r) => r.classList.remove("selected"));
+      row.classList.add("selected");
+    }
+  });
+};
+
+function handleNav(action) {
+  const isSearch =
+    document.getElementById("search-input").value.length > 0 ||
+    document.getElementById("search-input-mobile").value.length > 0;
+
+  if (isSearch && state.activeScrollers) {
+    // 1. Find which scroller currently holds our focused item
+    let activeScroller = null;
+    let currentIndex = -1;
+
+    for (const sObj of state.activeScrollers) {
+      const idx = sObj.scroller.items.findIndex(
+        (i) => state.focusedRow && i.path === state.focusedRow.path,
+      );
+      if (idx !== -1) {
+        activeScroller = sObj.scroller;
+        currentIndex = idx;
+        break;
+      }
+    }
+
+    // 2. If no selection yet, default to the first scroller's first item
+    if (!activeScroller && state.activeScrollers.length > 0) {
+      activeScroller = state.activeScrollers[0].scroller;
+      currentIndex = -1;
+    }
+
+    if (activeScroller) {
+      const items = activeScroller.items;
+      if (action === "down") {
+        // Only increment if not at the very end of this scroller
+        if (currentIndex < items.length - 1) {
+          window.selectVirtualItem(activeScroller, currentIndex + 1);
+        } else {
+          // OPTIONAL: Jump to the next category's scroller if at the end
+          const sIdx = state.activeScrollers.findIndex((s) => s.scroller === activeScroller);
+          if (sIdx < state.activeScrollers.length - 1) {
+            window.selectVirtualItem(state.activeScrollers[sIdx + 1].scroller, 0);
+          }
+        }
+        return;
+      } else if (action === "up") {
+        if (currentIndex > 0) {
+          window.selectVirtualItem(activeScroller, currentIndex - 1);
+        } else {
+          // OPTIONAL: Jump to previous category's scroller
+          const sIdx = state.activeScrollers.findIndex((s) => s.scroller === activeScroller);
+          if (sIdx > 0) {
+            const prevScroller = state.activeScrollers[sIdx - 1].scroller;
+            window.selectVirtualItem(prevScroller, prevScroller.items.length - 1);
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  // --- Standard Fallback ---
+  const visibleRows = Array.from(document.querySelectorAll(".tree-row, .virtual-row")).filter((r) =>
+    isRowVisible(r),
+  );
+
+  if (!state.focusedRow && visibleRows.length > 0) {
+    selectAndScroll(visibleRows[0]);
+    return;
+  }
+
+  const currentEl =
+    state.focusedRow.el ||
+    document.querySelector(`.virtual-row[data-path="${CSS.escape(state.focusedRow.path)}"]`);
+  const idx = visibleRows.indexOf(currentEl);
+
+  if (action === "down" && idx < visibleRows.length - 1) {
+    selectAndScroll(visibleRows[idx + 1]);
+  } else if (action === "up" && idx > 0) {
+    selectAndScroll(visibleRows[idx - 1]);
+  }
+}
+
+document.addEventListener("click", (e) => {
+  // Close Popups if clicked outside
+  const closeIfOutside = (id, triggerSelector) => {
+    const el = document.getElementById(id);
+    // If visible, and click is NOT inside el, and NOT inside trigger
+    if (el.classList.contains("visible")) {
+      if (!e.target.closest(`#${id}`) && (!triggerSelector || !e.target.closest(triggerSelector))) {
+        if (id === "sp-input-popover") window.closeBadgePopup();
+        else if (id === "sp-enum-popover")
+          document.getElementById("sp-enum-popover").classList.remove("visible");
+        else el.classList.remove("visible");
+      }
+    }
+  };
+
+  // Add .mobile-nav-btn to the allowed triggers
+  closeIfOutside("menu-popover", "#menu-btn, .mobile-nav-btn");
+  closeIfOutside("maintainer-popup", ".maintainer-chip");
+  closeIfOutside("version-dropdown", "#version-btn");
+  closeIfOutside("search-history", window.innerWidth < 768 ? "#search-bar-mobile" : "#search-bar");
+
+  // Scratchpad Popups (Input & Enum)
+  // Trigger is the badge itself
+  closeIfOutside("sp-input-popover", ".sp-type-badge");
+  closeIfOutside("sp-enum-popover", ".sp-type-badge");
+
+  // Close Modals (Backdrop click)
+  if (e.target.classList.contains("overlay-backdrop")) {
+    e.target.classList.remove("visible");
+  }
+});
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  if (isError) t.classList.add("error");
+  else t.classList.remove("error");
+  t.classList.add("visible");
+  setTimeout(() => t.classList.remove("visible"), 3000);
+}
+
+document.querySelectorAll('input[name="accent"]').forEach((radio) => {
+  radio.addEventListener("change", (e) => {
+    state.accent = e.target.value;
+    updateStyles();
+    saveSettings();
+  });
+});
+
+init();
