@@ -1,26 +1,47 @@
 <script lang="ts">
-const Q_PANE_LEFT = document.querySelector(".pane-left");
-const I_SHEET_BACKDROP = document.getElementById("sheet-backdrop")
-const I_SCRATCHPAD_PANEL=document.getElementById("scratchpad-panel")
-const I_SP_VISUAL_VIEW = document.getElementById("sp-visual-view")
-const I_NEWS_PAGE_LATEST=document.getElementById("news-page-latest")
-const I_NEWS_PAGE_ARCHIVE_LIST=document.getElementById("news-page-archive-list")
-const I_NEWS_TITLE=document.getElementById("news-title")
-const I_NEWS_BACK_BTN = document.getElementById("news-back-btn")
-const I_VERSION_DROPDOWN = document.getElementById("version-dropdown")
-const I_NEWS_PAGE_ARCHIVE_ENTRY = document.getElementById("news-page-archive-entry")
+    import { onMount } from "svelte";
 
-if (!Q_PANE_LEFT||!I_VERSION_DROPDOWN||!I_NEWS_TITLE||!I_NEWS_PAGE_ARCHIVE_LIST||!I_NEWS_PAGE_LATEST||!I_SP_VISUAL_VIEW || !I_SHEET_BACKDROP || !I_SCRATCHPAD_PANEL) {
-  const msg = "Error: Some elements are missing, this is the developer's fault. Please report this issue."
-  alert(msg);
-  throw msg;
-}
+    let Q_PANE_LEFT: HTMLDivElement;
+    let I_SHEET_BACKDROP: HTMLDivElement;
+    let I_SCRATCHPAD_PANEL: HTMLDivElement;
+    let I_SP_VISUAL_VIEW: HTMLDivElement;
+    let I_NEWS_PAGE_LATEST: HTMLDivElement;
+    let I_NEWS_PAGE_ARCHIVE_LIST: HTMLDivElement;
+    let I_NEWS_TITLE: HTMLDivElement;
+    let I_NEWS_BACK_BTN: HTMLButtonElement;
+    let I_VERSION_DROPDOWN: HTMLSelectElement;
+    let I_NEWS_PAGE_ARCHIVE_ENTRY: HTMLDivElement;
+
+    onMount(() => {
+        if (
+            !Q_PANE_LEFT ||
+            !I_VERSION_DROPDOWN ||
+            !I_NEWS_TITLE ||
+            !I_NEWS_PAGE_ARCHIVE_LIST ||
+            !I_NEWS_PAGE_ARCHIVE_ENTRY||
+            !I_NEWS_PAGE_LATEST ||
+            !I_SP_VISUAL_VIEW ||
+            !I_SHEET_BACKDROP ||
+            !I_SCRATCHPAD_PANEL
+        ) {
+            const msg = "Error: Some elements are missing.";
+            alert(msg);
+            throw new Error(msg);
+        }
+    });
 
 export let openMobileSheet = () => {
   if (window.innerWidth <= 768) {
     // This adds the class that triggers the CSS transition
     Q_PANE_LEFT.classList.add("visible");
     I_SHEET_BACKDROP.classList.add("visible");
+  }
+};
+export let closeMobileSheet = () => {
+  if (window.innerWidth <= 768) {
+    // This adds the class that triggers the CSS transition
+    Q_PANE_LEFT.classList.remove("visible");
+    I_SHEET_BACKDROP.classList.remove("visible");
   }
 };
 
@@ -60,20 +81,6 @@ export const toggleScratchpad = () => {
       }
     }
   }
-};
-
-// Update existing openMobileSheet to ensure Scratchpad closes when Nav opens
-const originalOpenMobileSheet = openMobileSheet;
-openMobileSheet = () => {
-  // Close scratchpad before opening nav
-  I_SCRATCHPAD_PANEL.classList.remove("visible");
-  if (originalOpenMobileSheet) originalOpenMobileSheet();
-};
-// Wrap existing openInspector to trigger sheet on mobile
-const originalOpenInspector = openInspector;
-openInspector = (path, meta, type) => {
-  originalOpenInspector(path, meta, type);
-  // openMobileSheet();
 };
 
 window.addEventListener("resize", () => {
@@ -171,7 +178,18 @@ function isRowVisible(row) {
 }
 // --- VIRTUAL SCROLL ENGINE (Fixed Target) ---
 class VirtualScroller {
-  constructor(container, items, rowHeight, renderRowFn, onItemClick) {
+  private container:Element;
+    private items: any[];
+    private rowHeight: number;
+    private renderRowFn;
+    private onItemClick; // This is optional now
+
+    // FIX: Ensure we find a parent even if detached (fallback to body, but better to attach first)
+    private scrollParent ;
+
+    private viewport;
+
+  constructor(container: Element, items:any[], rowHeight:number, renderRowFn, onItemClick) {
     this.container = container;
     this.items = items;
     this.rowHeight = rowHeight;
@@ -197,10 +215,10 @@ class VirtualScroller {
     const scrollTop = this.scrollParent.scrollTop;
 
     let containerOffset = 0;
-    let el = this.container;
+    let el: Element | null = this.container;
     while (el && el !== this.scrollParent) {
-      containerOffset += el.offsetTop;
-      el = el.offsetParent;
+      containerOffset += (el as HTMLElement).offsetTop;
+      el =  (el as HTMLElement).offsetParent;
     }
 
     const relativeScroll = Math.max(0, scrollTop - containerOffset);
@@ -240,7 +258,7 @@ class VirtualScroller {
   }
 
   // NEW: Helper to scroll to a specific index
-  scrollToIndex(index) {
+  scrollToIndex(index:number) {
     if (index < 0 || index >= this.items.length) return;
     const itemTop = index * this.rowHeight;
 
@@ -571,7 +589,7 @@ const newsNav = {
   },
 
   // LEVEL 2: Show Specific Entry
-  goToEntry: (filename) => {
+  goToEntry: (filename:string) => {
     // 1. Move List to Left (Exit)
     I_NEWS_PAGE_ARCHIVE_LIST.classList.remove("active");
     I_NEWS_PAGE_ARCHIVE_LIST.classList.add("exit-left");
@@ -583,7 +601,7 @@ const newsNav = {
 
     // Header
     I_NEWS_TITLE.textContent = filename.replace(".json", "");
-    const btn = I_NEWS_BACK_BTN;
+    const btn = I_NEWS_BACK_BTN!;
     btn.style.visibility = "visible";
     btn.onclick = () => newsNav.goToArchive(); // Back goes to Archive List
   },
@@ -4537,8 +4555,8 @@ document.querySelectorAll('input[name="accent"]').forEach((radio) => {
 init();
 </script>
 
-<div class="sheet-backdrop" id="sheet-backdrop" onclick={closeAllSheets}></div>
-<div class="pane-left">
+<div class="sheet-backdrop" bind:this={I_SHEET_BACKDROP} id="sheet-backdrop" onclick={closeAllSheets}></div>
+<div class="pane-left" bind:this={Q_PANE_LEFT}>
 	<div class="header-bar">
 		<button class="adw-button icon-only" onclick={toggleScratchpad} title="Search">
 			<svg
@@ -4710,7 +4728,7 @@ init();
 				>
 			</button>
 
-			<div id="version-dropdown">
+			<div id="version-dropdown" bind:this={I_VERSION_DROPDOWN}>
 				<div class="popover-inner">
 					<div class="version-list" id="version-list-container"></div>
 					<div class="version-footer">
@@ -4807,7 +4825,7 @@ init();
 		/></svg
 	>
 </button>
-<div id="scratchpad-panel">
+<div id="scratchpad-panel" bind:this={I_SCRATCHPAD_PANEL}>
 	<div class="sp-header">
 		<span>Config Scratchpad</span>
 		<button class="window-close-button" onclick={toggleScratchpad}
@@ -4820,7 +4838,7 @@ init();
 		>
 	</div>
 	<div id="sp-editor-container">
-		<div id="sp-visual-view" contenteditable="true" spellcheck="false"></div>
+		<div id="sp-visual-view" bind:this={I_SP_VISUAL_VIEW} contenteditable="true" spellcheck="false"></div>
 	</div>
 
 	<div id="sp-input-popover">
@@ -4958,7 +4976,7 @@ init();
 					/></svg
 				>
 			</button>
-			<span id="news-title">Developer News</span>
+			<span id="news-title" bind:this={I_NEWS_TITLE}>Developer News</span>
 			<button class="window-close-button" onclick={() => closeModal('news')}>
 				<svg width="8" height="8" viewBox="0 0 8 8" fill="none"
 					><path
@@ -4969,15 +4987,15 @@ init();
 			</button>
 		</div>
 		<div class="window-content about-stack-container">
-			<div id="news-page-latest" class="stack-page active">
+			<div id="news-page-latest" bind:this={I_NEWS_PAGE_LATEST} class="stack-page active">
 				<div id="news-body-latest"></div>
 			</div>
 
-			<div id="news-page-archive-list" class="stack-page off-right">
+			<div id="news-page-archive-list" bind:this={I_NEWS_PAGE_ARCHIVE_LIST} class="stack-page off-right">
 				<div id="news-body-archive-list"></div>
 			</div>
 
-			<div id="news-page-archive-entry" class="stack-page off-right">
+			<div id="news-page-archive-entry" bind:this={I_NEWS_PAGE_ARCHIVE_ENTRY} class="stack-page off-right">
 				<div id="news-body-archive-entry"></div>
 			</div>
 		</div>
