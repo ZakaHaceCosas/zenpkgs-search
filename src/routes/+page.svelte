@@ -1,40 +1,16 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import VirtualScroller from "./vs.svelte";
+    import {
+        type VisibleType,
+        type TOptionsData,
+        type ColorString,
+        type KeybindString,
+        ColorStrings,
+        type TPkgsData
+    } from "$lib/types";
 
-    /**
-     * M for Modal, I for Item, P for popovers
-     */
-    type VisibleType = ["MAbout", "MSettings", "PMenu", "ILoader", "IScratchpad"][number];
-    const ColorStrings = [
-        "blue",
-        "teal",
-        "green",
-        "yellow",
-        "orange",
-        "red",
-        "pink",
-        "purple",
-        "slate"
-    ] as const;
-    type ColorString = (typeof ColorStrings)[number];
-    // TODO: do this properly
-    type KeyString =
-        | ","
-        | "Ctrl"
-        | "f"
-        | "ArrowUp"
-        | "ArrowDown"
-        | "ArrowLeft"
-        | "ArrowRight"
-        | "c"
-        | "Shift"
-        | "."
-        | "g"
-        | "a";
-    type KeybindString =
-        | KeyString
-        | `${KeyString}+${KeyString}`
-        | `${KeyString}+${KeyString}+${KeyString}`;
+    const query = "d";
 
     const modals = $state<Record<VisibleType, boolean>>({
         MAbout: false,
@@ -56,8 +32,8 @@
         // TODO: better type stuff below
         data: null | {
             maintainers: Record<string, { name: string; role: string; [key: string]: string }>;
-            options: Record<string, { meta: Record<string, any>; sub?: Record<string, any> }>;
-            pkgs: Record<string, { sub: any }>[];
+            options: TOptionsData;
+            pkgs: TPkgsData;
         };
         versions: [];
         selectedVersion: null | "Latest commit";
@@ -69,7 +45,7 @@
         geminiKey: string;
         customFont: string;
         customCSS: string;
-        focusedRow: null;
+        focusedRow: null | { path: string; type: string; node: Node };
         comboTimeout: number;
         currentMeta: null;
         favorites: [];
@@ -221,6 +197,13 @@
         )
     );
     $effect(() => console.log(appState));
+
+    function getBranchItems(catKey: "options" | "pkgs"): TOptionsData | TPkgsData {
+        if (!appState.data || !appState.data[catKey]) return {};
+        const a = appState.data[catKey];
+        console.log("GBI>", a);
+        return a;
+    }
 </script>
 
 {#if loading == true}
@@ -494,6 +477,18 @@
         <div class="main-content">
             <div class="content-container">
                 <div id="registry-root">
+                    {#each ["options", "pkgs"] as const as catKey}
+                        <div class="adw-group-title">
+                            {{ options: "Nix Options", pkgs: "Packages" }[catKey]}
+                        </div>
+
+                        <VirtualScroller
+                            data={getBranchItems(catKey)}
+                            rowHeight={44}
+                            {appState}
+                            {query}
+                        />
+                    {/each}
                     <div class="chip-grid">
                         {#each Object.keys(appState.data!.maintainers) as mnt}
                             <div class="maintainer-chip">{mnt}</div>
