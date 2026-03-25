@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { TreeRow, Obj } from "$lib/types";
+    import type { TreeRow, Obj, TAppState } from "$lib/types";
     import { onMount } from "svelte";
     const escapeHTML = (str: string) => {
         if (!str) return "";
@@ -22,7 +22,7 @@
         const result: TreeRow[] = [];
 
         function walk(obj: Record<string, Obj>, depth = 0, path: string[] = []) {
-            console.log(obj);
+            console.log("Walking", obj);
             for (const [key, value] of Object.entries(obj)) {
                 const fullKey = [...path, key].join(".");
 
@@ -34,7 +34,7 @@
                     item: value.meta,
                     depth,
                     hasChildren,
-                    type: "todo",
+                    type: value.meta?.type,
                     expanded: isExpanded,
                     isMatch: query ? isMatch(key, query) : false
                 });
@@ -49,13 +49,20 @@
         return result;
     }
 
-    export let data: Record<string, Obj>;
-    export let rowHeight: number = 28;
-    export let appState;
-    export let query: string;
+    let {
+        data,
+        rowHeight = 28,
+        appState,
+        query
+    } = $props<{
+        data: Record<string, Obj>;
+        rowHeight?: number;
+        appState: TAppState;
+        query: string;
+    }>();
 
     let expanded = new Set<string>();
-    let rows: TreeRow[] = [];
+    let rows: TreeRow[] = $state([]);
 
     // virtual scroll state
     let container: HTMLDivElement;
@@ -69,6 +76,10 @@
         rows = buildVisibleTree(data, expanded, query);
     }
 
+    $effect(() => {
+        console.log(rows);
+    });
+
     function toggle(key: string) {
         if (expanded.has(key)) {
             expanded.delete(key);
@@ -78,13 +89,12 @@
         rebuild();
     }
 
-    // virtual calculations
-    $: startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
-    $: endIndex = Math.min(
-        rows.length,
-        Math.ceil((scrollTop + viewportHeight) / rowHeight) + buffer
-    );
-    $: visibleRows = rows.slice(startIndex, endIndex);
+    // virtual calculations (TODO)
+    let startIndex = 0; // $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - buffer));
+    /* let endIndex = $derived(
+        Math.min(rows.length, Math.ceil((scrollTop + viewportHeight) / rowHeight) + buffer)
+    ); */
+    let visibleRows = $derived(rows); // $derived(rows.slice(startIndex, endIndex));
 
     function handleScroll() {
         scrollTop = container.scrollTop;
@@ -96,24 +106,22 @@
     });
 </script>
 
-<div class="virtual-container" bind:this={container} on:scroll={handleScroll}>
+<div class="tree-root virtual-container" bind:this={container} onscroll={handleScroll}>
     <div class="virtual-viewport" style="height: {rows.length * rowHeight}px">
-        {#each visibleRows as row, i (row.key)}
+        {#each visibleRows as row, i}
             <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
             <div
-                class="virtual-row"
+                class="virtual-row tree-row"
                 style="top: {(startIndex + i) *
                     rowHeight}px; height: {rowHeight}px; padding-left: {row.depth * 16}px"
                 class:selected={appState.focusedRow?.path === row.key &&
                     appState.focusedRow?.type === row.type}
                 class:search-leaf-match={row.isMatch}
-                on:click={() => row.hasChildren && toggle(row.key)}
+                onclick={() => row.hasChildren && toggle(row.key)}
             >
-                {#if row.hasChildren}
-                    <div class="row-icon expanded">
-                        {row.expanded ? "▶" : "▼"}
-                    </div>
-                {/if}
+                <div class="row-icon expanded">
+                    {row.hasChildren ? (row.expanded ? "▼" : "▶") : "●"}
+                </div>
 
                 <div class="row-label">
                     <span class="label">
@@ -128,6 +136,7 @@
                     {#if row.item}
                         <span class="desc">
                             — {row.item.description}
+                            ({row.item.type})
                         </span>
                     {/if}
                 </div>
@@ -156,23 +165,3 @@
           </div>
         `}
                                 </div>-->
-<style>
-    .virtual-container {
-        position: relative;
-        overflow-y: auto;
-        height: 100%;
-        font-family: sans-serif;
-    }
-
-    .virtual-viewport {
-        position: relative;
-        width: 100%;
-    }
-
-    .virtual-row {
-        position: absolute;
-        width: 100%;
-        display: flex;
-        align-items: center;
-    }
-</style>

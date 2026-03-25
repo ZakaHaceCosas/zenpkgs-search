@@ -3,6 +3,7 @@ export type Item = {
     license: null;
     longDescription: string | null;
     maintainers: any[];
+    type: string;
     platforms: any[];
 };
 
@@ -17,7 +18,7 @@ export type TreeRow = {
     key: string;
     item?: Item;
     depth: number;
-    type: string;
+    type: string | undefined;
     hasChildren: boolean;
     expanded: boolean;
     isMatch: boolean;
@@ -56,3 +57,55 @@ export type KeybindString =
     | KeyString
     | `${KeyString}+${KeyString}`
     | `${KeyString}+${KeyString}+${KeyString}`;
+export type TAppState = {
+    diffSelecting: boolean;
+    diffMode: boolean;
+    // inferred from reading previous (untyped!) codebase
+    diffBaseData: null | Record<string, Record<string, any>>;
+    diffBaseVersion: string | null;
+    currentNewsContent: string;
+    newsArchive: `${string}.json`[];
+    advancedScratchpad: boolean;
+    searchMatchIndex: number;
+    // TODO: better type stuff below
+    data: null | {
+        maintainers: Record<string, { name: string; role: string; [key: string]: string }>;
+        options: TOptionsData;
+        pkgs: TPkgsData;
+    };
+    versions: [];
+    selectedVersion: null | "Latest commit";
+    dark: boolean;
+    accent: ColorString;
+    reducedMotion: boolean;
+    transparency: number;
+    ghToken: string;
+    geminiKey: string;
+    customFont: string;
+    customCSS: string;
+    focusedRow: null | { path: string; type: string; node: Node };
+    comboTimeout: number;
+    currentMeta: null;
+    favorites: [];
+    recents: [];
+    searchHistory: [];
+    commandHistory: [];
+    scratchpadConfig: string;
+    favsCollapsed: boolean;
+    keybinds: {
+        search: KeybindString;
+        up: KeybindString;
+        down: KeybindString;
+        left: KeybindString;
+        right: KeybindString;
+        copyId: KeybindString;
+        copyDesc: KeybindString;
+        version: KeybindString;
+        settings: KeybindString;
+        about: KeybindString;
+        top: "g g"; // this is double press g? gotta think about how to type that
+        bottom: KeybindString;
+        nextMatch: KeybindString;
+        prevMatch: KeybindString;
+    };
+};

@@ -7,7 +7,8 @@
         type ColorString,
         type KeybindString,
         ColorStrings,
-        type TPkgsData
+        type TPkgsData,
+        type TAppState
     } from "$lib/types";
 
     const query = "d";
@@ -19,58 +20,7 @@
         ILoader: false,
         IScratchpad: false
     });
-    let appState = $state<{
-        diffSelecting: boolean;
-        diffMode: boolean;
-        // inferred from reading previous (untyped!) codebase
-        diffBaseData: null | Record<string, Record<string, any>>;
-        diffBaseVersion: string | null;
-        currentNewsContent: string;
-        newsArchive: `${string}.json`[];
-        advancedScratchpad: boolean;
-        searchMatchIndex: number;
-        // TODO: better type stuff below
-        data: null | {
-            maintainers: Record<string, { name: string; role: string; [key: string]: string }>;
-            options: TOptionsData;
-            pkgs: TPkgsData;
-        };
-        versions: [];
-        selectedVersion: null | "Latest commit";
-        dark: boolean;
-        accent: ColorString;
-        reducedMotion: boolean;
-        transparency: number;
-        ghToken: string;
-        geminiKey: string;
-        customFont: string;
-        customCSS: string;
-        focusedRow: null | { path: string; type: string; node: Node };
-        comboTimeout: number;
-        currentMeta: null;
-        favorites: [];
-        recents: [];
-        searchHistory: [];
-        commandHistory: [];
-        scratchpadConfig: string;
-        favsCollapsed: boolean;
-        keybinds: {
-            search: KeybindString;
-            up: KeybindString;
-            down: KeybindString;
-            left: KeybindString;
-            right: KeybindString;
-            copyId: KeybindString;
-            copyDesc: KeybindString;
-            version: KeybindString;
-            settings: KeybindString;
-            about: KeybindString;
-            top: "g g"; // this is double press g? gotta think about how to type that
-            bottom: KeybindString;
-            nextMatch: KeybindString;
-            prevMatch: KeybindString;
-        };
-    }>({
+    let appState = $state<TAppState>({
         diffSelecting: false,
         diffMode: false,
         diffBaseData: null,
@@ -164,7 +114,7 @@
             `https://raw.githubusercontent.com/${dataConfig.OWNER}/${dataConfig.REPO}/${dataConfig.BRANCH}/latestCommit.json`
         );
         initialMeta = await metaRes.json();
-        console.log(initialMeta);
+        console.error("INIT META", initialMeta);
         if (initialMeta.options || initialMeta.pkgs) {
             appState.data = initialMeta;
             appState.selectedVersion = "Latest commit";
