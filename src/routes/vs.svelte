@@ -14,11 +14,7 @@
     const isMatch = (key: string, str: string) => {
         return key.toLowerCase().includes(str.toLowerCase());
     };
-    function buildVisibleTree(
-        data: Record<string, Obj>,
-        expanded: Set<string>,
-        query: string
-    ): TreeRow[] {
+    function buildVisibleTree(data: Record<string, Obj>, expanded: Set<string>): TreeRow[] {
         const result: TreeRow[] = [];
 
         function walk(obj: Record<string, Obj>, depth = 0, path: string[] = []) {
@@ -34,9 +30,9 @@
                     item: value.meta,
                     depth,
                     hasChildren,
-                    type: value.meta?.type,
+                    type: (hasChildren ? "options" : JSON.stringify(value.meta?.type))!,
                     expanded: isExpanded,
-                    isMatch: query ? isMatch(key, query) : false
+                    isMatch: appState.query ? isMatch(key, appState.query) : false
                 });
 
                 if (hasChildren && isExpanded) {
@@ -52,13 +48,11 @@
     let {
         data,
         rowHeight = 28,
-        appState,
-        query
+        appState
     } = $props<{
         data: Record<string, Obj>;
         rowHeight?: number;
         appState: TAppState;
-        query: string;
     }>();
 
     let expanded = new Set<string>();
@@ -66,19 +60,15 @@
 
     // virtual scroll state
     let container: HTMLDivElement;
-    let scrollTop = 0;
-    let viewportHeight = 0;
+    let scrollTop = $state(0);
+    let viewportHeight = $state(0);
 
-    const buffer = 5;
+    const buffer = 30;
 
     // rebuild rows when expanded changes
     function rebuild() {
-        rows = buildVisibleTree(data, expanded, query);
+        rows = buildVisibleTree(data, expanded);
     }
-
-    $effect(() => {
-        console.log(rows);
-    });
 
     function toggle(key: string) {
         if (expanded.has(key)) {
@@ -89,12 +79,31 @@
         rebuild();
     }
 
-    // virtual calculations (TODO)
-    let startIndex = 0; // $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - buffer));
-    /* let endIndex = $derived(
+    function select(target: TreeRow) {
+        appState.focusedRow = {
+            path: target.key,
+            type: target.type
+        };
+
+        const stored = localStorage.getItem("recents");
+        let recents = [];
+        try {
+            recents = stored ? (JSON.parse(stored).recents ?? []) : [];
+        } catch (e) {
+            recents = [];
+        }
+        recents.push({
+            path: target.key,
+            type: target.type
+        });
+        localStorage.setItem("recents", JSON.stringify({ recents }));
+    }
+
+    let startIndex = $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - buffer));
+    let endIndex = $derived(
         Math.min(rows.length, Math.ceil((scrollTop + viewportHeight) / rowHeight) + buffer)
-    ); */
-    let visibleRows = $derived(rows); // $derived(rows.slice(startIndex, endIndex));
+    );
+    let visibleRows = $derived(rows.slice(startIndex, endIndex));
 
     function handleScroll() {
         scrollTop = container.scrollTop;
@@ -107,9 +116,10 @@
 </script>
 
 <div class="tree-root virtual-container" bind:this={container} onscroll={handleScroll}>
-    <div class="virtual-viewport" style="height: {rows.length * rowHeight}px">
+    <div class="virtual-viewport tree-node-wrapper" style="height: {rows.length * rowHeight}px">
         {#each visibleRows as row, i}
-            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
                 class="virtual-row tree-row"
                 style="top: {(startIndex + i) *
@@ -117,7 +127,10 @@
                 class:selected={appState.focusedRow?.path === row.key &&
                     appState.focusedRow?.type === row.type}
                 class:search-leaf-match={row.isMatch}
-                onclick={() => row.hasChildren && toggle(row.key)}
+                onclick={() => {
+                    select(row);
+                    row.hasChildren && toggle(row.key);
+                }}
             >
                 <div class="row-icon expanded">
                     {row.hasChildren ? (row.expanded ? "▼" : "▶") : "●"}
@@ -129,39 +142,28 @@
                             ? row.key
                                   .split(".")
                                   .at(-1)!
-                                  .replace(new RegExp(query, "i"), (m) => `<b>${m}</b>`)
+                                  .replace(new RegExp(appState.query, "i"), (m) => `<b>${m}</b>`)
                             : escapeHTML(row.key.split(".").at(-1)!)}
                     </span>
-
-                    {#if row.item}
-                        <span class="desc">
-                            — {row.item.description}
-                            ({row.item.type})
-                        </span>
-                    {/if}
                 </div>
             </div>
         {/each}
     </div>
 </div>
 
-<!-- IDEALLY CODE FROM HERE SHOULD BE IMPLEMENTED IN THE NEW THING <div
-                                    class="virtual-row"
-                                    style="padding-left: {16 + item.level * 20}px"
-                                    class:selected={appState.focusedRow?.path === item.path &&
-                                        appState.focusedRow?.type === item.type}
-                                    class:search-leaf-match={item.isMatch}
-                                >
-                                    {@html `
-          <div class="row-icon ${item.sub ? "expanded" : "leaf"}">
-            ${item.sub ? "▶" : "●"}
-          </div>
-          <div class="row-label">
-            ${
-                item.isMatch
-                    ? item.key.replace(new RegExp(query, "i"), (match: string) => `<b>${match}</b>`)
-                    : escapeHTML(item.key)
-            }
-          </div>
-        `}
-                                </div>-->
+<style>
+    .virtual-container {
+        overflow-y: auto;
+        height: 100%;
+        position: relative;
+    }
+
+    .virtual-viewport {
+        position: relative;
+    }
+
+    .virtual-row {
+        position: absolute;
+        width: 100%;
+    }
+</style>

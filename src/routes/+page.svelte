@@ -11,8 +11,6 @@
         type TAppState
     } from "$lib/types";
 
-    const query = "d";
-
     const modals = $state<Record<VisibleType, boolean>>({
         MAbout: false,
         MSettings: false,
@@ -21,11 +19,15 @@
         IScratchpad: false
     });
     let appState = $state<TAppState>({
+        searching: false,
+        previewedNews: null,
+        unreadLatest: false,
+        query: "",
         diffSelecting: false,
         diffMode: false,
         diffBaseData: null,
         diffBaseVersion: null,
-        currentNewsContent: "",
+        currentNewsContent: null,
         newsArchive: [],
         advancedScratchpad: true,
         searchMatchIndex: -1,
@@ -72,6 +74,65 @@
     const toggleVisible = (id: VisibleType) => {
         modals[id] = !modals[id];
     };
+    function updateNewsBadges(latestNewsId: string) {
+        const lastRead = localStorage.getItem("zenpkgs_news_id");
+        const isNew = lastRead !== latestNewsId;
+        appState.unreadLatest = !isNew;
+    }
+
+    $effect(() => {
+        if (!appState.focusedRow) fetchNews(false).then(() => {});
+    });
+
+    export async function fetchNews(previewMode = false, specificFile = null) {
+        try {
+            const baseUrl = `https://raw.githubusercontent.com/${dataConfig.OWNER}/${dataConfig.REPO}/news`;
+            const url = specificFile
+                ? `${baseUrl}/${specificFile}`
+                : `${baseUrl}/latest.json?nocache=${Date.now()}`;
+
+            const res = await fetch(url);
+            console.log(res);
+            if (!res.ok) return;
+            const news = await res.json();
+
+            if (previewMode) {
+                if (!specificFile) updateNewsBadges(news.id);
+                appState.previewedNews = news[0];
+                return;
+            }
+
+            appState.currentNewsContent = news.content;
+            appState.previewedNews = news;
+
+            /* if (specificFile) {
+                newsNav.renderArticle(news, "news-body-archive-entry", false);
+                newsNav.goToEntry(specificFile);
+            } else {
+                updateNewsBadges(news.id);
+                newsNav.renderArticle(news, "news-body-latest", true);
+                newsNav.goToLatest();
+
+                if (appState.newsArchive.length === 0) {
+                    const listUrl = `https://api.github.com/repos/${dataConfig.OWNER}/${dataConfig.REPO}/contents?ref=news`;
+                    fetch(listUrl, {
+                        headers: appState.ghToken ? { Authorization: `Bearer ${appState.ghToken}` } : {}
+                    })
+                        .then((r) => r.json())
+                        .then((files) => {
+                            if (Array.isArray(files))
+                                appState.newsArchive = files
+                                    .filter(
+                                        (f) => f.name.endsWith(".json") && f.name !== "latest.json"
+                                    )
+                                    .sort((a, b) => b.name.localeCompare(a.name));
+                        });
+                }
+            } */
+        } catch (e) {
+            console.error("News Error:", e);
+        }
+    }
 
     async function fetchWithAuth(url: string) {
         const headers = new Headers();
@@ -84,11 +145,18 @@
     async function loadSettings() {
         const preferences = localStorage.getItem("preferences");
         const history = localStorage.getItem("history");
+        const recents = localStorage.getItem("recents");
 
         if (preferences) {
             appState = {
                 ...appState,
                 ...JSON.parse(preferences)
+            };
+        }
+        if (recents) {
+            appState = {
+                ...appState,
+                ...JSON.parse(recents)
             };
         }
         if (history) {
@@ -165,7 +233,11 @@
     <div class="sheet-backdrop" id="sheet-backdrop"></div>
     <div class="pane-left">
         <div class="header-bar">
-            <button class="adw-button icon-only" title="Search">
+            <button
+                class="adw-button icon-only"
+                title="Search"
+                onclick={() => (appState.searching = !appState.searching)}
+            >
                 <svg
                     width="16"
                     height="16"
@@ -221,15 +293,99 @@
                     stroke-width="2"
                     viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg
                 >
-                <!-- Notification Dot -->
                 <div
                     id="btn-news-badge"
-                    style="position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-red); border-radius:50%; display:none;"
+                    style={"position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-red); border-radius:50%; " +
+                    appState.unreadLatest
+                        ? "display:block"
+                        : "display:none"}
                 ></div>
             </button>
         </div>
         <div class="sidebar-content" id="sidebar-body">
-            <!-- Sidebar content injected dynamically via JS -->
+            {#if appState.focusedRow == null}
+                <div style="padding: 40px 0; text-align: center; color: var(--dim-label);">
+                    <div style="margin-bottom: 16px; opacity: 0.1">
+                        <svg width="80" height="80" fill="currentColor" viewBox="0 0 24 24"
+                            ><path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+                            ></path></svg
+                        >
+                    </div>
+                    <div style="font-weight: 700; margin-bottom: 8px;">ZenPkgs Explorer</div>
+                    <div style="font-size: 0.9rem; margin-bottom: 32px;">
+                        Select an option to view details.
+                    </div>
+
+                    {#if appState.previewedNews}
+                        <div id="start-news-preview" style="display: block;">
+                            <div
+                                class="news-card"
+                                onclick={() => {
+                                    toggleVisible("MAbout");
+                                    fetchNews(false);
+                                }}
+                            >
+                                {#if appState.unreadLatest}<div class="news-label-new">
+                                        NEW
+                                    </div>{/if}
+                                <div
+                                    style="font-weight:700; color:var(--text-color); font-size:1rem; margin-bottom:4px;"
+                                >
+                                    {appState.previewedNews.title}
+                                </div>
+                                <div
+                                    style="font-size:0.8rem; color:var(--dim-label); margin-bottom:12px;"
+                                >
+                                    {appState.previewedNews.date}
+                                </div>
+                                <div
+                                    style="font-size:0.85rem; color:var(--link-color); font-weight:700; display:flex; align-items:center; gap:4px;"
+                                >
+                                    Read Article
+                                    <svg
+                                        width="12"
+                                        height="12"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.5"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path d="M5 12h14M12 5l7 7-7 7"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
+
+                    <div
+                        style="font-size: 0.75rem; margin-top: 24px; color: var(--secondary-label); padding: 0 20px;"
+                    >
+                        <code>Ctrl+F</code> to search<br />
+                        <code>ArrowUp/ArrowDown</code> to navigate
+                    </div>
+                    <div style="text-align:left; margin-top:32px; padding: 0 20px;">
+                        <div class="adw-group-title" style="margin-left:0; text-align:left;">
+                            Recent
+                        </div>
+                        <div class="adw-group">
+                            {#each appState.recents as recent}
+                                <div
+                                    class="adw-row"
+                                    style="cursor:pointer"
+                                    onclick={() => (appState.focusedRow = recent)}
+                                >
+                                    <span style="font-weight:600; font-size:0.9em"
+                                        >{recent.path}</span
+                                    >
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                </div>
+            {:else}
+                {appState.focusedRow.path} ({appState.focusedRow.type})
+            {/if}
         </div>
     </div>
 
@@ -305,14 +461,64 @@
 
             <div class="header-bar-center-stack">
                 <div class="header-bar-center-stack">
-                    <div class="breadcrumbs-wrapper" id="breadcrumbs"></div>
+                    <div class="breadcrumbs-wrapper" id="breadcrumbs">
+                        <div class="crumb-btn" onclick={(appState.focusedRow = null)}>
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="var(--dim-label)"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <g clip-path="url(#clip0_272_121)"
+                                    ><path
+                                        fill-rule="evenodd"
+                                        clip-rule="evenodd"
+                                        d="M12.5 7C10.567 7 9 5.433 9 3.5C9 1.567 10.567 0 12.5 0C14.433 0 16 1.567 16 3.5C16 5.433 14.433 7 12.5 7ZM12.5 1.5C13.6046 1.5 14.5 2.39543 14.5 3.5C14.5 4.60457 13.6046 5.5 12.5 5.5C11.3954 5.5 10.5 4.60457 10.5 3.5C10.5 2.39543 11.3954 1.5 12.5 1.5Z"
+                                    ></path><path
+                                        fill-rule="evenodd"
+                                        clip-rule="evenodd"
+                                        d="M12.5 16C10.567 16 9 14.433 9 12.5C9 10.567 10.567 9 12.5 9C14.433 9 16 10.567 16 12.5C16 14.433 14.433 16 12.5 16ZM12.5 10.5C13.6046 10.5 14.5 11.3954 14.5 12.5C14.5 13.6046 13.6046 14.5 12.5 14.5C11.3954 14.5 10.5 13.6046 10.5 12.5C10.5 11.3954 11.3954 10.5 12.5 10.5Z"
+                                    ></path><path
+                                        fill-rule="evenodd"
+                                        clip-rule="evenodd"
+                                        d="M3.5 11.5C1.567 11.5 0 9.933 0 8C0 6.067 1.567 4.5 3.5 4.5C5.433 4.5 7 6.067 7 8C7 9.933 5.433 11.5 3.5 11.5ZM3.5 6C4.60457 6 5.5 6.89543 5.5 8C5.5 9.10457 4.60457 10 3.5 10C2.39543 10 1.5 9.10457 1.5 8C1.5 6.89543 2.39543 6 3.5 6Z"
+                                        fill="currentColor"
+                                    ></path></g
+                                ><defs
+                                    ><clipPath id="clip0_272_121"
+                                        ><rect width="16" height="16" fill="currentColor"
+                                        ></rect></clipPath
+                                    ></defs
+                                >
+                            </svg><span>zenpkgs</span>
+                        </div>
+                        {#if appState.focusedRow != null}
+                            {#each (appState.focusedRow as any).path.split(".") as key, idx}
+                                <span class="crumb-sep">›</span>
+                                <div
+                                    class="crumb-btn"
+                                    class:active={idx ==
+                                        (appState.focusedRow as any).path.split(".").length - 1}
+                                    onclick={(appState.focusedRow = null)}
+                                >
+                                    <span>{key}</span>
+                                </div>
+                            {/each}
+                        {/if}
+                    </div>
                 </div>
-                <div class="search-wrapper" id="search-bar">
+                <div
+                    class={appState.searching ? "search-wrapper visible" : "search-wrapper"}
+                    id="search-bar"
+                >
                     <input
                         type="text"
                         class="adw-search"
                         id="search-input"
                         placeholder="Search registry..."
+                        value={appState.query}
+                        oninput={(e) => (appState.query = e.currentTarget.value.trim())}
                     />
                     <div id="search-history"></div>
                 </div>
@@ -432,13 +638,9 @@
                             {{ options: "Nix Options", pkgs: "Packages" }[catKey]}
                         </div>
 
-                        <VirtualScroller
-                            data={getBranchItems(catKey)}
-                            rowHeight={44}
-                            {appState}
-                            {query}
-                        />
+                        <VirtualScroller data={getBranchItems(catKey)} rowHeight={44} {appState} />
                     {/each}
+                    <br />
                     <div class="chip-grid">
                         {#each Object.keys(appState.data!.maintainers) as mnt}
                             <div class="maintainer-chip">{mnt}</div>
@@ -582,7 +784,13 @@
             Command Palette <span style="opacity:0.5; font-size:0.8em; margin-left:8px">Ctrl+K</span
             >
         </div>
-        <div class="menu-item">
+        <div
+            class="menu-item"
+            onclick={() => {
+                toggleVisible("MAbout");
+                toggleVisible("PMenu");
+            }}
+        >
             About <span style="opacity:0.5; font-size:0.8em; margin-left:8px">Ctrl+Shift+A</span>
         </div>
     </div>
@@ -968,7 +1176,10 @@
     </div>
 
     <!-- ABOUT MODAL -->
-    <div class="overlay-backdrop" id="modal-about">
+    <div
+        id="modal-about"
+        class={"overlay-backdrop " + (modals["MAbout"] === true ? "visible" : "")}
+    >
         <div class="adw-window" id="about-window" style="max-width: 400px; text-align: center;">
             <div class="dialog-header">
                 <button
@@ -989,13 +1200,13 @@
                     >
                 </button>
                 <span id="about-title" class="dialog-title">About</span>
-                <button class="window-close-button">
-                    <svg
-                        width="8"
-                        height="8"
-                        viewBox="0 0 8 8"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
+                <button
+                    class="window-close-button"
+                    title="Close"
+                    aria-label="Close this modal"
+                    onclick={() => toggleVisible("MAbout")}
+                >
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"
                         ><path
                             d="M2.5 4L0 1.5V0H1.5L4 2.5L6.5 0H8V1.5L5.5 4L8 6.5V8H6.5L4 5.5L1.5 8H0V6.5L2.5 4Z"
                             fill="currentColor"

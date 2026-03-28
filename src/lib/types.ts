@@ -18,7 +18,7 @@ export type TreeRow = {
     key: string;
     item?: Item;
     depth: number;
-    type: string | undefined;
+    type: any;
     hasChildren: boolean;
     expanded: boolean;
     isMatch: boolean;
@@ -57,13 +57,25 @@ export type KeybindString =
     | KeyString
     | `${KeyString}+${KeyString}`
     | `${KeyString}+${KeyString}+${KeyString}`;
+type Row = { path: string; type: string };
+type NewsContent = {
+    authors: string[];
+    content: string;
+    date: `${number}.${number}.${number}`;
+    id: `${number}.${number}.${number}-${number}`;
+    title: string;
+};
 export type TAppState = {
+    searching: boolean;
+    unreadLatest: boolean;
+    previewedNews: null | NewsContent;
+    query: string;
     diffSelecting: boolean;
     diffMode: boolean;
     // inferred from reading previous (untyped!) codebase
     diffBaseData: null | Record<string, Record<string, any>>;
     diffBaseVersion: string | null;
-    currentNewsContent: string;
+    currentNewsContent: null | NewsContent;
     newsArchive: `${string}.json`[];
     advancedScratchpad: boolean;
     searchMatchIndex: number;
@@ -83,12 +95,12 @@ export type TAppState = {
     geminiKey: string;
     customFont: string;
     customCSS: string;
-    focusedRow: null | { path: string; type: string; node: Node };
+    focusedRow: null | Row;
     comboTimeout: number;
     currentMeta: null;
-    favorites: [];
-    recents: [];
-    searchHistory: [];
+    favorites: Row[];
+    recents: Row[];
+    searchHistory: string[];
     commandHistory: [];
     scratchpadConfig: string;
     favsCollapsed: boolean;
