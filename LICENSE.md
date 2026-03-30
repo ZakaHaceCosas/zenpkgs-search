@@ -1,7 +1,8 @@
 # NAPALM: THE NON-AGGRESSION PRINCIPLE ANTI-LICENSE MANDATE
+
 **VERSION 2.0**
 
-*This Mandate is Licensed Under the NAPALM Mandate, which is Licensed Under the NAPALM Mandate, Ad Infinitum.*
+_This Mandate is Licensed Under the NAPALM Mandate, which is Licensed Under the NAPALM Mandate, Ad Infinitum._
 
 ---
 
@@ -15,7 +16,7 @@
 
 **WHEREAS**, the initiation of physical force suspends the victim's rational judgment, negating the means of survival and introducing a logical contradiction into human interaction;
 
-**NOW, THEREFORE**, the **Non-Aggression Principle (NAP)** is not a mere rule, but the objective recognition that **Aggression is a negation of Life**. 
+**NOW, THEREFORE**, the **Non-Aggression Principle (NAP)** is not a mere rule, but the objective recognition that **Aggression is a negation of Life**.
 
 **THEREFORE**, the Grantor transfers the Conditional Title to the Resource defined below, subject to the absolute rejection of the illogical act of Aggression.
 
@@ -26,12 +27,14 @@
 1.1 **"The Resource"** shall mean the specific scarce entity (matter, data, energy, or intellectual creation) identified in the **Identifier Block** of this instrument.
 
 1.2 **"Aggression"** shall mean the initiation of physical force against the biological person or rightful property of another.
-   * *Derivation:* Since A is A, a human (A) cannot simultaneously claim the right to life while negating the life-sustaining capacity (property) of another human (A). Aggression is an operational contradiction.
 
-1.3 **"The State"** shall mean any entity claiming a territorial monopoly on the legitimate use of force and ultimate decision-making.
-   * *The Property Paradox:* By asserting jurisdiction over all property within arbitrary geographic borders, **The State** effectively claims Superior Title over all private assets, reducing individuals to tenants. Therefore, the mere existence of The State is a continuous, systemic violation of all Property Rights within its territory.
+- _Derivation:_ Since A is A, a human (A) cannot simultaneously claim the right to life while negating the life-sustaining capacity (property) of another human (A). Aggression is an operational contradiction.
 
-1.4 **"Acquirer"** shall mean any conscious entity that physically possesses, observes, utilizes, or exerts control over the Resource.
+    1.3 **"The State"** shall mean any entity claiming a territorial monopoly on the legitimate use of force and ultimate decision-making.
+
+- _The Property Paradox:_ By asserting jurisdiction over all property within arbitrary geographic borders, **The State** effectively claims Superior Title over all private assets, reducing individuals to tenants. Therefore, the mere existence of The State is a continuous, systemic violation of all Property Rights within its territory.
+
+    1.4 **"Acquirer"** shall mean any conscious entity that physically possesses, observes, utilizes, or exerts control over the Resource.
 
 ---
 
@@ -39,27 +42,28 @@
 
 2.1 **NATURE OF TRANSFER.** The Grantor does not "license" rights (a statist concept). The Grantor **Transfers Title** to the Privilege of Use to the Acquirer, subject to a **Condition Subsequent**.
 
-2.2 **THE CONDITION SUBSEQUENT.** The Acquirer holds Title to the Resource *if and only if* the Acquirer remains a Non-Aggressor.
+2.2 **THE CONDITION SUBSEQUENT.** The Acquirer holds Title to the Resource _if and only if_ the Acquirer remains a Non-Aggressor.
 
 2.3 **UNIVERSAL APPLICABILITY.** This transfer applies to:
-   (a) **Digital Assets:** Code, binaries, media (Acceptance via execution/reading).
-   (b) **Physical Assets:** Tools, machinery, land, art (Acceptance via physical possession).
-   (c) **Intellectual Assets:** Ideas, formulas, text (Acceptance via comprehension/usage).
+(a) **Digital Assets:** Code, binaries, media (Acceptance via execution/reading).
+(b) **Physical Assets:** Tools, machinery, land, art (Acceptance via physical possession).
+(c) **Intellectual Assets:** Ideas, formulas, text (Acceptance via comprehension/usage).
 
 ---
 
 ## ARTICLE III: CONDITIONS OF TITLE REVERSION
 
 3.1 **AUTOMATIC REVERSION.** Upon the Acquirer's first act of Aggression (Kinetic, Financial, or Regulatory), the Condition Subsequent is failed.
-   * *Result:* The Title immediately reverts to the Grantor.
-   * *Status:* The Acquirer's continued possession is no longer a valid property claim but a physical act of **Unauthorized Possession**.
 
-3.2 **INSTITUTIONAL DISQUALIFICATION.** Entities that survive via Aggression (States) or entities funded by Aggression (Tax-Funded Corps) are logically incapable of holding valid Title. Their possession is **Void Ab Initio**.
+- _Result:_ The Title immediately reverts to the Grantor.
+- _Status:_ The Acquirer's continued possession is no longer a valid property claim but a physical act of **Unauthorized Possession**.
 
-3.3 **PROHIBITED CAUSALITY.** Title is withheld if the Resource is used as a cause for:
-   (a) **Statutory Restriction:** Invoking Copyright/Patent laws.
-   (b) **Involuntary Extraction:** Facilitating Taxation or Eminent Domain.
-   (c) **Surveillance:** Tracking individuals without consent.
+    3.2 **INSTITUTIONAL DISQUALIFICATION.** Entities that survive via Aggression (States) or entities funded by Aggression (Tax-Funded Corps) are logically incapable of holding valid Title. Their possession is **Void Ab Initio**.
+
+    3.3 **PROHIBITED CAUSALITY.** Title is withheld if the Resource is used as a cause for:
+    (a) **Statutory Restriction:** Invoking Copyright/Patent laws.
+    (b) **Involuntary Extraction:** Facilitating Taxation or Eminent Domain.
+    (c) **Surveillance:** Tracking individuals without consent.
 
 ---
 
@@ -74,10 +78,11 @@
 ## ARTICLE V: INVOLUNTARY TRUSTEESHIP
 
 5.1 **INVOLUNTARY TRUST.** If an Aggressor possesses the Resource after Title Reversion (Section 3.1), they become an **Involuntary Trustee**.
-   * *Duty:* They must preserve the Resource and all value generated by it for the Grantor.
-   * *Liability:* They are strictly liable for any degradation of the Resource.
 
-5.2 **THEFT OF SERVICE.** Any utility derived by an Aggressor is a debt owed to the Grantor.
+- _Duty:_ They must preserve the Resource and all value generated by it for the Grantor.
+- _Liability:_ They are strictly liable for any degradation of the Resource.
+
+    5.2 **THEFT OF SERVICE.** Any utility derived by an Aggressor is a debt owed to the Grantor.
 
 ---
 
@@ -97,9 +102,10 @@
 
 7.2 **SETTLEMENT.** Restitution is payable in **Physical Gold** (Atomic Element 79) or **XMR** (Monero).
 
-7.3 **ATOMIC INDIVISIBILITY.** The Privilege of Use and the Condition Subsequent (Non-Aggression) are atomically linked and legally indivisible. 
-   * *The Tripwire:* If a court, legislature, or other entity attempts to sever, invalidate, or ignore the Non-Aggression condition while attempting to preserve the Privilege of Use, **the entire Transfer of Title is immediately revoked.**
-   * *Result:* The Acquirer is left with no rights whatsoever, rendering their possession a Trespass.
+7.3 **ATOMIC INDIVISIBILITY.** The Privilege of Use and the Condition Subsequent (Non-Aggression) are atomically linked and legally indivisible.
+
+- _The Tripwire:_ If a court, legislature, or other entity attempts to sever, invalidate, or ignore the Non-Aggression condition while attempting to preserve the Privilege of Use, **the entire Transfer of Title is immediately revoked.**
+- _Result:_ The Acquirer is left with no rights whatsoever, rendering their possession a Trespass.
 
 ---
 
@@ -108,7 +114,8 @@
 8.1 **NO WARRANTY.** THE RESOURCE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. THE GRANTOR SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF THE RESOURCE.
 
 ---
+
 **IDENTIFIER BLOCK:**
-*Usage: Fill in the specific identifier for the covered Resource.*
+_Usage: Fill in the specific identifier for the covered Resource._
 **RESOURCE ID:** [Physical Description / Serial Number / SHA-256 Hash]
 **AUTHOR:** [Name / Pseudonym / PGP Key]
