@@ -8,7 +8,8 @@
         type KeybindString,
         ColorStrings,
         type TPkgsData,
-        type TAppState
+        type TAppState,
+        type Obj
     } from "$lib/types";
 
     const modals = $state<Record<VisibleType, boolean>>({
@@ -80,6 +81,43 @@
         appState.unreadLatest = !isNew;
     }
 
+    function queryRow(row: string | null): Obj["meta"] | null {
+        if (!row || !appState.data) return null;
+
+        const parts = row.split(".");
+        const prefix = parts.shift() as "options" | "pkgs";
+
+        let current: Obj | undefined = appState.data[prefix];
+
+        for (const key of parts) {
+            if (!current) return null;
+
+            const next: Obj | undefined = current.sub ? current.sub[key] : (current as any)[key];
+
+            if (!next) return null;
+            current = next;
+        }
+
+        $inspect("CURR", current);
+        return current?.meta || null;
+    }
+
+    const selectedRow: Obj["meta"] | null = $derived(queryRow(appState.focusedRow));
+
+    // TODO
+    function toggleFavorite(a: any) {
+        alert("my lazy ass still has to do this");
+        return "noop";
+    }
+    function addToScratchpad(a: any) {
+        alert("my lazy ass still has to do this");
+        return "noop";
+    }
+    function copyToClipboard(a: any) {
+        alert("my lazy ass still has to do this");
+        return "noop";
+    }
+
     $effect(() => {
         if (!appState.focusedRow) fetchNews(false).then(() => {});
     });
@@ -149,20 +187,20 @@
 
         if (preferences) {
             appState = {
-                ...appState,
-                ...JSON.parse(preferences)
+                ...appState
+                // preferences: JSON.parse(preferences)
             };
         }
         if (recents) {
             appState = {
                 ...appState,
-                ...JSON.parse(recents)
+                recents: JSON.parse(recents)
             };
         }
         if (history) {
             appState = {
-                ...appState,
-                ...JSON.parse(history)
+                ...appState
+                // history: JSON.parse(history)
             };
             toggleVisible("IScratchpad");
         }
@@ -214,12 +252,12 @@
             "important"
         )
     );
-    $effect(() => console.log(appState));
+    $inspect("AppState", appState);
 
     function getBranchItems(catKey: "options" | "pkgs"): TOptionsData | TPkgsData {
         if (!appState.data || !appState.data[catKey]) return {};
         const a = appState.data[catKey];
-        console.log("GBI>", a);
+        $inspect("GetBranchItems>", a);
         return a;
     }
 </script>
@@ -293,13 +331,12 @@
                     stroke-width="2"
                     viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg
                 >
-                <div
-                    id="btn-news-badge"
-                    style={"position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-red); border-radius:50%; " +
-                    appState.unreadLatest
-                        ? "display:block"
-                        : "display:none"}
-                ></div>
+                {#if appState.unreadLatest}
+                    <div
+                        id="btn-news-badge"
+                        style="position:absolute; top:8px; right:8px; width:6px; height:6px; background:var(--accent-red); border-radius:50%; "
+                    ></div>
+                {/if}
             </button>
         </div>
         <div class="sidebar-content" id="sidebar-body">
@@ -382,7 +419,105 @@
                     </div>
                 </div>
             {:else}
-                {appState.focusedRow}
+                <div class="sidebar-content" id="sidebar-body">
+                    <div
+                        class="adw-group-title"
+                        style="margin-top:12px; margin-left:24px; display:flex; justify-content:space-between; align-items:center; padding-right:12px"
+                    >
+                        <span>Identifier</span>
+                        <button
+                            class="adw-button icon-only"
+                            onclick={() => toggleFavorite(appState.focusedRow)}
+                            title="Pin"
+                        >
+                            <svg
+                                width="16"
+                                height="16"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                                ><path
+                                    d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                                ></path></svg
+                            >
+                        </button>
+                    </div>
+                    <div class="adw-group" style="margin: 0 12px 24px 12px;">
+                        <div
+                            class="adw-row"
+                            style="flex-direction: column; align-items: flex-start; gap: 12px; border-bottom:none;"
+                        >
+                            <div
+                                style="font-family:var(--font-mono); font-size:0.85rem; word-break:break-all;"
+                                id="inspector-id-text"
+                            >
+                                {appState.focusedRow}
+                            </div>
+                            <div style="display:flex; gap:8px; width:100%; justify-content:center;">
+                                <div
+                                    class="maintainer-chip"
+                                    style="background:var(--accent-bg); color:var(--accent-fg); flex:0 0 auto; min-width:140px; justify-content:center; text-align:center"
+                                    onclick={() => addToScratchpad(appState.focusedRow)}
+                                >
+                                    + Add to Scratchpad
+                                </div>
+                                <div
+                                    class="maintainer-chip"
+                                    style="background:var(--accent-bg); color:var(--accent-fg); flex:0 0 auto; min-width:100px; justify-content:center; text-align:center"
+                                    onclick={() => copyToClipboard(appState.focusedRow)}
+                                >
+                                    Copy ID
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {#if selectedRow?.type}
+                        <div class="adw-group-title" style="margin-left:24px;">Type</div>
+                        <div class="adw-group" style="margin: 0 12px 24px 12px;">
+                            <div class="adw-row" style="padding: 10px 16px; min-height: 44px;">
+                                <div
+                                    style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:0.9rem"
+                                >
+                                    <!--TODO: render icon-->
+                                    <!--TODO: properly parse types; some are strings but others are objects (like Enum)-->
+                                    <span style="text-transform:capitalize"
+                                        >{JSON.stringify(selectedRow.type)}</span
+                                    >
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
+                    {#if selectedRow?.description}
+                        <div class="adw-group-title" style="margin-left:24px;">Description</div>
+                        <div class="adw-group" style="margin: 0 12px 24px 12px;">
+                            <div
+                                class="adw-row"
+                                style="cursor:default; padding:16px; color:var(--text-color)"
+                                id="inspector-desc-text"
+                            >
+                                {selectedRow.description}
+                            </div>
+                        </div>
+                    {/if}
+                    {#if selectedRow?.maintainers && selectedRow.maintainers.length != 0}
+                        <div class="adw-group-title" style="margin-left:24px;">Maintainers</div>
+                        {#each selectedRow.maintainers as m}
+                            <div class="chip-grid" style="padding: 0 12px; margin-bottom:24px;">
+                                <div class="maintainer-chip" onclick={() => console.error("TODO")}>
+                                    {m}
+                                </div>
+                            </div>
+                        {/each}
+                    {/if}
+                    <!--TODO: markdown rendering-->
+                    {#if selectedRow?.longDescription}
+                        <div class="adw-group-title" style="margin-left:24px;">Documentation</div>
+                        <div class="markdown-body" style="margin: 0 12px 24px 12px;">
+                            {selectedRow.longDescription}
+                        </div>
+                    {/if}
+                </div>
             {/if}
         </div>
     </div>

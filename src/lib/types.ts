@@ -11,7 +11,6 @@ export type Obj = {
     meta?: Item;
     sub?: Record<string, Obj>;
 };
-
 export type TOptionsData = Record<string, Obj>;
 export type TPkgsData = Record<string, Obj>;
 export type TreeRow = {

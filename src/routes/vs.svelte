@@ -18,7 +18,6 @@
         const result: TreeRow[] = [];
 
         function walk(obj: Record<string, Obj>, depth = 0, path: string[] = []) {
-            console.log("Walking", obj);
             for (const [key, value] of Object.entries(obj)) {
                 const fullKey = branch + "." + [...path, key].join(".");
 
@@ -45,7 +44,12 @@
         return result;
     }
 
-    let { data, rowHeight, appState, branch } = $props<{
+    let {
+        data,
+        rowHeight,
+        appState = $bindable(),
+        branch
+    } = $props<{
         data: Record<string, Obj>;
         rowHeight: number;
         appState: TAppState;
