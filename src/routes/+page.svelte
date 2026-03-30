@@ -375,16 +375,14 @@
                                     style="cursor:pointer"
                                     onclick={() => (appState.focusedRow = recent)}
                                 >
-                                    <span style="font-weight:600; font-size:0.9em"
-                                        >{recent.path}</span
-                                    >
+                                    <span style="font-weight:600; font-size:0.9em">{recent}</span>
                                 </div>
                             {/each}
                         </div>
                     </div>
                 </div>
             {:else}
-                {appState.focusedRow.path} ({appState.focusedRow.type})
+                {appState.focusedRow}
             {/if}
         </div>
     </div>
@@ -494,12 +492,11 @@
                             </svg><span>zenpkgs</span>
                         </div>
                         {#if appState.focusedRow != null}
-                            {#each (appState.focusedRow as any).path.split(".") as key, idx}
+                            {#each (appState.focusedRow as any).split(".") as key, idx}
                                 <span class="crumb-sep">›</span>
                                 <div
                                     class="crumb-btn"
-                                    class:active={idx ==
-                                        (appState.focusedRow as any).path.split(".").length - 1}
+                                    class:active={idx == appState.focusedRow!.split(".").length - 1}
                                     onclick={(appState.focusedRow = null)}
                                 >
                                     <span>{key}</span>
@@ -637,10 +634,14 @@
                         <div class="adw-group-title">
                             {{ options: "Nix Options", pkgs: "Packages" }[catKey]}
                         </div>
-
-                        <VirtualScroller data={getBranchItems(catKey)} rowHeight={44} {appState} />
+                        <VirtualScroller
+                            data={getBranchItems(catKey)}
+                            branch={catKey}
+                            rowHeight={50}
+                            {appState}
+                        />
                     {/each}
-                    <br />
+                    <div class="adw-group-title">MAINTAINERS</div>
                     <div class="chip-grid">
                         {#each Object.keys(appState.data!.maintainers) as mnt}
                             <div class="maintainer-chip">{mnt}</div>

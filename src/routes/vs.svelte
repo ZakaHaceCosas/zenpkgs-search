@@ -20,7 +20,7 @@
         function walk(obj: Record<string, Obj>, depth = 0, path: string[] = []) {
             console.log("Walking", obj);
             for (const [key, value] of Object.entries(obj)) {
-                const fullKey = [...path, key].join(".");
+                const fullKey = branch + "." + [...path, key].join(".");
 
                 const hasChildren = !!value.sub;
                 const isExpanded = expanded.has(fullKey);
@@ -45,14 +45,11 @@
         return result;
     }
 
-    let {
-        data,
-        rowHeight = 28,
-        appState
-    } = $props<{
+    let { data, rowHeight, appState, branch } = $props<{
         data: Record<string, Obj>;
-        rowHeight?: number;
+        rowHeight: number;
         appState: TAppState;
+        branch: "options" | "pkgs";
     }>();
 
     let expanded = new Set<string>();
@@ -80,23 +77,18 @@
     }
 
     function select(target: TreeRow) {
-        appState.focusedRow = {
-            path: target.key,
-            type: target.type
-        };
+        appState.focusedRow = target.key;
 
         const stored = localStorage.getItem("recents");
-        let recents = [];
+        let recents: string[] = [];
         try {
-            recents = stored ? (JSON.parse(stored).recents ?? []) : [];
+            recents = stored ? (JSON.parse(stored) ?? []) : [];
         } catch (e) {
+            console.warn(e);
             recents = [];
         }
-        recents.push({
-            path: target.key,
-            type: target.type
-        });
-        localStorage.setItem("recents", JSON.stringify({ recents }));
+        recents.unshift(target.key);
+        localStorage.setItem("recents", JSON.stringify(recents));
     }
 
     let startIndex = $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - buffer));
@@ -124,8 +116,7 @@
                 class="virtual-row tree-row"
                 style="top: {(startIndex + i) *
                     rowHeight}px; height: {rowHeight}px; padding-left: {row.depth * 16}px"
-                class:selected={appState.focusedRow?.path === row.key &&
-                    appState.focusedRow?.type === row.type}
+                class:selected={appState.focusedRow === row.key}
                 class:search-leaf-match={row.isMatch}
                 onclick={() => {
                     select(row);

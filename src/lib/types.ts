@@ -57,7 +57,6 @@ export type KeybindString =
     | KeyString
     | `${KeyString}+${KeyString}`
     | `${KeyString}+${KeyString}+${KeyString}`;
-type Row = { path: string; type: string };
 type NewsContent = {
     authors: string[];
     content: string;
@@ -95,11 +94,11 @@ export type TAppState = {
     geminiKey: string;
     customFont: string;
     customCSS: string;
-    focusedRow: null | Row;
+    focusedRow: null | string;
     comboTimeout: number;
     currentMeta: null;
-    favorites: Row[];
-    recents: Row[];
+    favorites: string[];
+    recents: string[];
     searchHistory: string[];
     commandHistory: [];
     scratchpadConfig: string;
