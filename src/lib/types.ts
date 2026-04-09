@@ -3,8 +3,20 @@ export type Item = {
     license: null;
     longDescription: string | null;
     maintainers: any[];
-    type: string;
+    type?:
+        | "string"
+        | "array"
+        | "number"
+        | "boolean"
+        | "set"
+        | "function"
+        | "Open Submodule Of (Attribute Set)"
+        | "unspecified value"
+        | {
+              enum: string[];
+          };
     platforms: any[];
+    default?: any;
 };
 
 export type Obj = {

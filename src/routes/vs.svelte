@@ -64,7 +64,7 @@
     let scrollTop = $state(0);
     let viewportHeight = $state(0);
 
-    const buffer = 30;
+    const buffer = 44;
 
     // rebuild rows when expanded changes
     function rebuild() {
@@ -91,6 +91,7 @@
             console.warn(e);
             recents = [];
         }
+        console.log(recents);
         recents.unshift(target.key);
         localStorage.setItem("recents", JSON.stringify(recents));
     }

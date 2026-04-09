@@ -11,6 +11,8 @@
         type TAppState,
         type Obj
     } from "$lib/types";
+    import TypeRenderer from "$lib/SidebarItem/TypeRenderer.svelte";
+    import SidebarItem from "$lib/SidebarItem/SidebarItem.svelte";
 
     const modals = $state<Record<VisibleType, boolean>>({
         MAbout: false,
@@ -104,20 +106,6 @@
 
     const selectedRow: Obj["meta"] | null = $derived(queryRow(appState.focusedRow));
 
-    // TODO
-    function toggleFavorite(a: any) {
-        alert("my lazy ass still has to do this");
-        return "noop";
-    }
-    function addToScratchpad(a: any) {
-        alert("my lazy ass still has to do this");
-        return "noop";
-    }
-    function copyToClipboard(a: any) {
-        alert("my lazy ass still has to do this");
-        return "noop";
-    }
-
     $effect(() => {
         if (!appState.focusedRow) fetchNews(false).then(() => {});
     });
@@ -184,6 +172,7 @@
         const preferences = localStorage.getItem("preferences");
         const history = localStorage.getItem("history");
         const recents = localStorage.getItem("recents");
+        const favorites = localStorage.getItem("favorites");
 
         if (preferences) {
             appState = {
@@ -195,6 +184,12 @@
             appState = {
                 ...appState,
                 recents: JSON.parse(recents)
+            };
+        }
+        if (favorites) {
+            appState = {
+                ...appState,
+                favorites: JSON.parse(favorites)
             };
         }
         if (history) {
@@ -419,105 +414,7 @@
                     </div>
                 </div>
             {:else}
-                <div class="sidebar-content" id="sidebar-body">
-                    <div
-                        class="adw-group-title"
-                        style="margin-top:12px; margin-left:24px; display:flex; justify-content:space-between; align-items:center; padding-right:12px"
-                    >
-                        <span>Identifier</span>
-                        <button
-                            class="adw-button icon-only"
-                            onclick={() => toggleFavorite(appState.focusedRow)}
-                            title="Pin"
-                        >
-                            <svg
-                                width="16"
-                                height="16"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                viewBox="0 0 24 24"
-                                ><path
-                                    d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                                ></path></svg
-                            >
-                        </button>
-                    </div>
-                    <div class="adw-group" style="margin: 0 12px 24px 12px;">
-                        <div
-                            class="adw-row"
-                            style="flex-direction: column; align-items: flex-start; gap: 12px; border-bottom:none;"
-                        >
-                            <div
-                                style="font-family:var(--font-mono); font-size:0.85rem; word-break:break-all;"
-                                id="inspector-id-text"
-                            >
-                                {appState.focusedRow}
-                            </div>
-                            <div style="display:flex; gap:8px; width:100%; justify-content:center;">
-                                <div
-                                    class="maintainer-chip"
-                                    style="background:var(--accent-bg); color:var(--accent-fg); flex:0 0 auto; min-width:140px; justify-content:center; text-align:center"
-                                    onclick={() => addToScratchpad(appState.focusedRow)}
-                                >
-                                    + Add to Scratchpad
-                                </div>
-                                <div
-                                    class="maintainer-chip"
-                                    style="background:var(--accent-bg); color:var(--accent-fg); flex:0 0 auto; min-width:100px; justify-content:center; text-align:center"
-                                    onclick={() => copyToClipboard(appState.focusedRow)}
-                                >
-                                    Copy ID
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {#if selectedRow?.type}
-                        <div class="adw-group-title" style="margin-left:24px;">Type</div>
-                        <div class="adw-group" style="margin: 0 12px 24px 12px;">
-                            <div class="adw-row" style="padding: 10px 16px; min-height: 44px;">
-                                <div
-                                    style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:0.9rem"
-                                >
-                                    <!--TODO: render icon-->
-                                    <!--TODO: properly parse types; some are strings but others are objects (like Enum)-->
-                                    <span style="text-transform:capitalize"
-                                        >{JSON.stringify(selectedRow.type)}</span
-                                    >
-                                </div>
-                            </div>
-                        </div>
-                    {/if}
-                    {#if selectedRow?.description}
-                        <div class="adw-group-title" style="margin-left:24px;">Description</div>
-                        <div class="adw-group" style="margin: 0 12px 24px 12px;">
-                            <div
-                                class="adw-row"
-                                style="cursor:default; padding:16px; color:var(--text-color)"
-                                id="inspector-desc-text"
-                            >
-                                {selectedRow.description}
-                            </div>
-                        </div>
-                    {/if}
-                    {#if selectedRow?.maintainers && selectedRow.maintainers.length != 0}
-                        <div class="adw-group-title" style="margin-left:24px;">Maintainers</div>
-                        {#each selectedRow.maintainers as m}
-                            <div class="chip-grid" style="padding: 0 12px; margin-bottom:24px;">
-                                <div class="maintainer-chip" onclick={() => console.error("TODO")}>
-                                    {m}
-                                </div>
-                            </div>
-                        {/each}
-                    {/if}
-                    <!--TODO: markdown rendering-->
-                    {#if selectedRow?.longDescription}
-                        <div class="adw-group-title" style="margin-left:24px;">Documentation</div>
-                        <div class="markdown-body" style="margin: 0 12px 24px 12px;">
-                            {selectedRow.longDescription}
-                        </div>
-                    {/if}
-                </div>
+                <SidebarItem focusedRow={appState.focusedRow} {selectedRow} {appState} />
             {/if}
         </div>
     </div>
@@ -788,14 +685,14 @@
     </div>
 
     <!-- Scratchpad FAB & Panel -->
-    <button id="scratchpad-fab">
+    <button id="scratchpad-fab" onclick={() => toggleVisible("IScratchpad")}>
         <svg viewBox="0 0 24 24"
             ><path
                 d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"
             /></svg
         >
     </button>
-    <div id="scratchpad-panel">
+    <div id="scratchpad-panel" class={modals["IScratchpad"] === true ? "visible" : ""}>
         <div class="sp-header">
             <span>Config Scratchpad</span>
             <button class="window-close-button"
@@ -808,7 +705,9 @@
             >
         </div>
         <div id="sp-editor-container">
-            <div id="sp-visual-view" contenteditable="true" spellcheck="false"></div>
+            <div id="sp-visual-view" contenteditable="true" spellcheck="false">
+                # Your generated config will appear here...
+            </div>
         </div>
 
         <div id="sp-input-popover">
