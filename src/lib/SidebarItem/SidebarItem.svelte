@@ -1,11 +1,13 @@
 <script lang="ts">
+    import Maintainer from "$lib/Maintainer.svelte";
     import { addToScratchpad, copyToClipboard, queryFavorites, toggleFavorite } from "$lib/toolkit";
-    import type { Obj, TAppState } from "$lib/types";
+    import type { TObj, TAppState } from "$lib/types";
     import TypeRenderer from "./TypeRenderer.svelte";
+    import { marked } from "marked";
 
     const { focusedRow, selectedRow, appState } = $props<{
         focusedRow: TAppState["focusedRow"];
-        selectedRow: Obj["meta"] | null;
+        selectedRow: TObj["meta"] | null;
         appState: TAppState;
     }>();
 
@@ -81,11 +83,9 @@
     {/if}
     {#if selectedRow?.maintainers && selectedRow.maintainers.length != 0}
         <div class="adw-group-title" style="margin-left:24px;">Maintainers</div>
-        {#each selectedRow.maintainers as m}
+        {#each selectedRow.maintainers as maintainer}
             <div class="chip-grid" style="padding: 0 12px; margin-bottom:24px;">
-                <div class="maintainer-chip" onclick={() => console.error("TODO")}>
-                    {m}
-                </div>
+                <Maintainer {maintainer} {appState} />
             </div>
         {/each}
     {/if}
@@ -93,7 +93,7 @@
     {#if selectedRow?.longDescription}
         <div class="adw-group-title" style="margin-left:24px;">Documentation</div>
         <div class="markdown-body" style="margin: 0 12px 24px 12px;">
-            {selectedRow.longDescription}
+            {@html marked(selectedRow.longDescription)}
         </div>
     {/if}
 </div>

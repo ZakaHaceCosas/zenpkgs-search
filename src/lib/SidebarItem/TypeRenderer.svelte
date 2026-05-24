@@ -1,12 +1,12 @@
 <script lang="ts">
-    import type { Item } from "../types";
+    import type { TItem } from "../types";
 
-    const { dataType } = $props<{ dataType: Item["type"] }>();
+    const { dataType } = $props<{ dataType: TItem["type"] }>();
 
     const isEnum = $derived(dataType && typeof dataType == "object");
 
     const idx = $derived(
-        (dataType as Item["type"]) == "Open Submodule Of (Attribute Set)"
+        (dataType as TItem["type"]) == "Open Submodule Of (Attribute Set)"
             ? "unknown"
             : isEnum
               ? "enum"

@@ -1,4 +1,7 @@
-        /* DEFAULT (Desktop): Hide mobile nav elements */
+html {
+  touch-action: pan-x pan-y!important;
+}
+/* DEFAULT (Desktop): Hide mobile nav elements */
 
         .diff-control-panel {
             padding: 8px 12px;

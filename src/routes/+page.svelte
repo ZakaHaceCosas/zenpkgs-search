@@ -2,19 +2,20 @@
     import { onMount } from "svelte";
     import VirtualScroller from "./vs.svelte";
     import {
-        type VisibleType,
+        type TVisibleType,
         type TOptionsData,
-        type ColorString,
-        type KeybindString,
+        type TColorString,
+        type TKeybindString,
         ColorStrings,
         type TPkgsData,
         type TAppState,
-        type Obj
+        type TObj
     } from "$lib/types";
     import TypeRenderer from "$lib/SidebarItem/TypeRenderer.svelte";
     import SidebarItem from "$lib/SidebarItem/SidebarItem.svelte";
+    import Maintainer from "$lib/Maintainer.svelte";
 
-    const modals = $state<Record<VisibleType, boolean>>({
+    const modals = $state<Record<TVisibleType, boolean>>({
         MAbout: false,
         MSettings: false,
         PMenu: false,
@@ -74,7 +75,7 @@
     const dataConfig = $state({ OWNER: "zenos-n", REPO: "zenpkgs", BRANCH: "json" });
     let loading = $state(true);
 
-    const toggleVisible = (id: VisibleType) => {
+    const toggleVisible = (id: TVisibleType) => {
         modals[id] = !modals[id];
     };
     function updateNewsBadges(latestNewsId: string) {
@@ -83,18 +84,18 @@
         appState.unreadLatest = !isNew;
     }
 
-    function queryRow(row: string | null): Obj["meta"] | null {
+    function queryRow(row: string | null): TObj["meta"] | null {
         if (!row || !appState.data) return null;
 
         const parts = row.split(".");
         const prefix = parts.shift() as "options" | "pkgs";
 
-        let current: Obj | undefined = appState.data[prefix];
+        let current: TObj | undefined = appState.data[prefix];
 
         for (const key of parts) {
             if (!current) return null;
 
-            const next: Obj | undefined = current.sub ? current.sub[key] : (current as any)[key];
+            const next: TObj | undefined = current.sub ? current.sub[key] : (current as any)[key];
 
             if (!next) return null;
             current = next;
@@ -104,7 +105,7 @@
         return current?.meta || null;
     }
 
-    const selectedRow: Obj["meta"] | null = $derived(queryRow(appState.focusedRow));
+    const selectedRow: TObj["meta"] | null = $derived(queryRow(appState.focusedRow));
 
     $effect(() => {
         if (!appState.focusedRow) fetchNews(false).then(() => {});
@@ -228,7 +229,7 @@
         loading = false;
     });
 
-    const colorMap: Record<ColorString, string> = {
+    const colorMap: Record<TColorString, string> = {
         blue: "#3584e4",
         teal: "#2190a4",
         green: "#3a944a",
@@ -675,8 +676,8 @@
                     {/each}
                     <div class="adw-group-title">MAINTAINERS</div>
                     <div class="chip-grid">
-                        {#each Object.keys(appState.data!.maintainers) as mnt}
-                            <div class="maintainer-chip">{mnt}</div>
+                        {#each Object.keys(appState.data!.maintainers) as maintainer}
+                            <Maintainer {maintainer} {appState} />
                         {/each}
                     </div>
                 </div>
@@ -926,7 +927,7 @@
                                         value={color}
                                         onchange={(e) =>
                                             (appState.accent = e.currentTarget
-                                                .value as ColorString)}
+                                                .value as TColorString)}
                                         checked={appState.accent == color}
                                     /><span
                                         class="accent-circle"
